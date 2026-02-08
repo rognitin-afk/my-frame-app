@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import "./globals.css";
-import { removeBackground } from '@imgly/background-removal';
 
 // This Interface fixes the "Unexpected any" error by defining what a Frame is
 interface Frame {
@@ -142,6 +141,7 @@ export default function Home() {
     try {
       setIsRemoving(true);
       const imageSrc = userPhoto.getSrc();
+      const { removeBackground } = await import('@imgly/background-removal');
       const blob = await removeBackground(imageSrc);
       const transparentUrl = URL.createObjectURL(blob);
 
