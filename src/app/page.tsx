@@ -106,36 +106,60 @@ export default function Home() {
     canvas.renderAll();
   }, [userName, userPosition]);
 
-  // 3. Frame Update
+  // 3. Frame Update — resize canvas to image aspect ratio, image fits exactly (no crop)
+  const MAX_CANVAS = 500;
+
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
-
-    const canvasSize = 500;
 
     fabric.Image.fromURL(selectedFrame).then((img) => {
       canvas.getObjects().forEach(obj => {
         if (obj.get('data')?.type === 'frame') canvas.remove(obj);
       });
 
+      const imgW = img.width ?? 1;
+      const imgH = img.height ?? 1;
+      const imgAspect = imgW / imgH;
+
+      // Canvas size: match image aspect ratio, longest side = MAX_CANVAS
+      let cw: number, ch: number;
+      if (imgAspect >= 1) {
+        cw = MAX_CANVAS;
+        ch = Math.round(MAX_CANVAS / imgAspect);
+      } else {
+        ch = MAX_CANVAS;
+        cw = Math.round(MAX_CANVAS * imgAspect);
+      }
+
+      canvas.setDimensions({ width: cw, height: ch });
+
+      // Scale image to fit canvas exactly (no crop)
+      const scale = Math.min(cw / imgW, ch / imgH);
       img.set({
         selectable: false,
         evented: false,
         data: { type: 'frame' },
         originX: 'center',
         originY: 'center',
-        left: canvasSize / 2,
-        top: canvasSize / 2,
+        left: cw / 2,
+        top: ch / 2,
+        scale,
       });
-
-      // Scale to cover canvas exactly while keeping image aspect ratio (no stretch)
-      const w = (img.width ?? 1);
-      const h = (img.height ?? 1);
-      const scale = Math.max(canvasSize / w, canvasSize / h);
-      img.scale(scale);
 
       canvas.add(img);
       canvas.sendObjectToBack(img);
+
+      // Keep name/position text at bottom-center of new canvas
+      canvas.getObjects().forEach((obj) => {
+        if (obj.get('data')?.id === 'name-text') {
+          obj.set({ left: cw / 2, top: ch - 105, originX: 'center', originY: 'center' });
+        }
+        if (obj.get('data')?.id === 'pos-text') {
+          obj.set({ left: cw / 2, top: ch - 70, originX: 'center', originY: 'center' });
+        }
+      });
+
       canvas.renderAll();
     });
   }, [selectedFrame]);
