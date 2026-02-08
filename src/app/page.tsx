@@ -259,7 +259,7 @@ export default function Home() {
 
         {/* 2. Text Details */}
         <section className="mb-6">
-          <h2 className="mb-3 text-xs font-bold text-slate-400 uppercase tracking-widest">2. Personal Details</h2>
+          <h2 className="mb-3 text-xs font-bold text-slate-400 uppercase tracking-widest">2. Person Name</h2>
           <input value={userName} onChange={(e) => setUserName(e.target.value)} className="mb-2 w-full border p-3 rounded" placeholder="Full Name" />
           <input value={userPosition} onChange={(e) => setUserPosition(e.target.value)} className="w-full border p-3 rounded" placeholder="Position" />
         </section>
