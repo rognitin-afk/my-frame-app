@@ -111,18 +111,28 @@ export default function Home() {
     const canvas = fabricRef.current;
     if (!canvas) return;
 
+    const canvasSize = 500;
+
     fabric.Image.fromURL(selectedFrame).then((img) => {
       canvas.getObjects().forEach(obj => {
         if (obj.get('data')?.type === 'frame') canvas.remove(obj);
       });
 
       img.set({
-        left: 0, top: 0, originX: 'left', originY: 'top',
-        selectable: false, evented: false, data: { type: 'frame' }
+        selectable: false,
+        evented: false,
+        data: { type: 'frame' },
+        originX: 'center',
+        originY: 'center',
+        left: canvasSize / 2,
+        top: canvasSize / 2,
       });
 
-      img.scaleToWidth(500);
-      img.scaleToHeight(500);
+      // Scale to cover canvas exactly while keeping image aspect ratio (no stretch)
+      const w = (img.width ?? 1);
+      const h = (img.height ?? 1);
+      const scale = Math.max(canvasSize / w, canvasSize / h);
+      img.scale(scale);
 
       canvas.add(img);
       canvas.sendObjectToBack(img);
