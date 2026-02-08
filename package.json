@@ -2,6 +2,7 @@
   "name": "my-frame-app",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "bun@1.2.4",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,6 +14,7 @@
     "fabric": "^7.1.0",
     "mongoose": "^9.1.6",
     "next": "16.1.6",
+    "onnxruntime-web": "^1.24.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-transliterate": "^1.1.9"

@@ -32,11 +32,12 @@ export default function Home() {
     async function loadFrames() {
       try {
         const res = await fetch('/api/frame');
-        const data: Frame[] = await res.json();
-        setDbFrames(data);
+        const data = await res.json();
+        const frames = Array.isArray(data) ? data : [];
+        setDbFrames(frames);
         // Automatically select the first frame from DB if it exists
-        if (data.length > 0) {
-          setSelectedFrame(data[0].src);
+        if (frames.length > 0) {
+          setSelectedFrame(frames[0].src);
         }
       } catch (error) {
         console.error("Failed to fetch frames from DB:", error);
@@ -46,7 +47,8 @@ export default function Home() {
   }, []);
 
   // --- SIDEBAR LOGIC ---
-  const displayedFrames = showAllFrames ? dbFrames : dbFrames.slice(0, 4);
+  const framesList = Array.isArray(dbFrames) ? dbFrames : [];
+  const displayedFrames = showAllFrames ? framesList : framesList.slice(0, 4);
 
   // 1. Initialize Canvas
   useEffect(() => {
