@@ -15,6 +15,7 @@ export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<fabric.Canvas | null>(null);
   const isInitialized = useRef(false);
+  const hasSetInitialFrame = useRef(false);
 
   // --- STATES ---
   const [selectedFrame, setSelectedFrame] = useState('/frames/election.png');
@@ -27,7 +28,7 @@ export default function Home() {
   const [canvasSize, setCanvasSize] = useState({ width: 500, height: 500 });
   const [frameLoading, setFrameLoading] = useState(false);
 
-  // --- FETCH DATA FROM MONGODB ---
+  // --- FETCH DATA FROM MONGODB --- (only set initial frame on first load; never overwrite user's selection)
   useEffect(() => {
     async function loadFrames() {
       try {
@@ -35,8 +36,8 @@ export default function Home() {
         const data = await res.json();
         const frames = Array.isArray(data) ? data : [];
         setDbFrames(frames);
-        // Automatically select the first frame from DB if it exists
-        if (frames.length > 0) {
+        if (frames.length > 0 && !hasSetInitialFrame.current) {
+          hasSetInitialFrame.current = true;
           setSelectedFrame(frames[0].src);
         }
       } catch (error) {
@@ -49,6 +50,19 @@ export default function Home() {
   // --- SIDEBAR LOGIC ---
   const framesList = Array.isArray(dbFrames) ? dbFrames : [];
   const displayedFrames = showAllFrames ? framesList : framesList.slice(0, 4);
+
+  const handleSelectFrame = (frameSrc: string) => {
+    if (frameSrc === selectedFrame) return;
+    const canvas = fabricRef.current;
+    if (canvas) {
+      canvas.getObjects().forEach((obj) => {
+        if (obj.get('data')?.type === 'user-photo') canvas.remove(obj);
+      });
+      canvas.requestRenderAll();
+    }
+    setPhotoZoom(100);
+    setSelectedFrame(frameSrc);
+  };
 
   // 1. Initialize Canvas
   useEffect(() => {
@@ -300,7 +314,7 @@ export default function Home() {
             {displayedFrames.map((frame) => (
               <button
                 key={frame._id}
-                onClick={() => setSelectedFrame(frame.src)}
+                onClick={() => handleSelectFrame(frame.src)}
                 className={`relative h-20 rounded border-2 transition-all ${selectedFrame === frame.src ? 'border-red-600 bg-red-50' : 'border-slate-100 hover:border-slate-300'}`}
               >
                 <img src={frame.src} alt={frame.name} className="object-contain p-2 w-full h-full" />
