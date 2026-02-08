@@ -363,23 +363,24 @@ export default function Home() {
 
       {/* RIGHT CANVAS AREA */}
       <div className="flex flex-1 flex-col items-center justify-center bg-slate-100 p-4">
-        {/* Outer wrapper: 2px padding only; canvas sits in exact-size inner box so image doesn't shift */}
+        {/* Outer wrapper: 2px padding, 5px rounded; inner 1px rounded only so image doesn't shift */}
         <div
           style={{
             width: canvasSize.width + 4,
             height: canvasSize.height + 4,
             padding: 2,
             boxSizing: 'border-box',
+            borderRadius: 5,
           }}
-          className="bg-white shadow-2xl rounded-xl border border-white"
+          className="bg-white shadow-2xl border border-white"
         >
           <div
-            style={{ width: canvasSize.width, height: canvasSize.height }}
-            className="relative"
+            style={{ width: canvasSize.width, height: canvasSize.height, borderRadius: 1 }}
+            className="relative overflow-hidden"
           >
             <div
-              className="absolute inset-0 flex items-center justify-center rounded-lg bg-slate-100 text-slate-500 font-medium z-10 transition-opacity"
-              style={{ visibility: frameLoading ? 'visible' : 'hidden', opacity: frameLoading ? 1 : 0 }}
+              className="absolute inset-0 flex items-center justify-center bg-slate-100 text-slate-500 font-medium z-10 transition-opacity"
+              style={{ borderRadius: 1, visibility: frameLoading ? 'visible' : 'hidden', opacity: frameLoading ? 1 : 0 }}
             >
               Loading frame...
             </div>
