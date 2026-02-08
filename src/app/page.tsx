@@ -24,7 +24,8 @@ export default function Home() {
   const [isRemoving, setIsRemoving] = useState(false);
   const [photoZoom, setPhotoZoom] = useState(1);
   const [showAllFrames, setShowAllFrames] = useState(false);
-  
+  const [canvasSize, setCanvasSize] = useState({ width: 500, height: 500 });
+  const [frameLoading, setFrameLoading] = useState(false);
 
   // --- FETCH DATA FROM MONGODB ---
   useEffect(() => {
@@ -106,23 +107,26 @@ export default function Home() {
     canvas.renderAll();
   }, [userName, userPosition]);
 
-  // 3. Frame Update — resize canvas to image aspect ratio, image fits exactly (no crop)
+  // 3. Frame: get dimensions first → resize canvas → set image as background (not selectable)
   const MAX_CANVAS = 500;
 
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
 
-    fabric.Image.fromURL(selectedFrame).then((img) => {
-      canvas.getObjects().forEach(obj => {
-        if (obj.get('data')?.type === 'frame') canvas.remove(obj);
-      });
+    setFrameLoading(true);
 
-      const imgW = img.width ?? 1;
-      const imgH = img.height ?? 1;
+    const probeImg = new Image();
+    probeImg.crossOrigin = 'anonymous';
+    probeImg.onload = () => {
+      const imgW = probeImg.naturalWidth || 1;
+      const imgH = probeImg.naturalHeight || 1;
+      if (imgW < 1 || imgH < 1) {
+        setFrameLoading(false);
+        return;
+      }
+
       const imgAspect = imgW / imgH;
-
-      // Canvas size: match image aspect ratio, longest side = MAX_CANVAS
       let cw: number, ch: number;
       if (imgAspect >= 1) {
         cw = MAX_CANVAS;
@@ -132,36 +136,49 @@ export default function Home() {
         cw = Math.round(MAX_CANVAS * imgAspect);
       }
 
-      canvas.setDimensions({ width: cw, height: ch });
+      setCanvasSize({ width: cw, height: ch });
+      try {
+        canvas.setDimensions({ width: cw, height: ch });
+      } catch {
+        // ignore if Fabric not ready
+      }
 
-      // Scale image to fit canvas exactly (no crop)
-      const scale = Math.min(cw / imgW, ch / imgH);
-      img.set({
-        selectable: false,
-        evented: false,
-        data: { type: 'frame' },
-        originX: 'center',
-        originY: 'center',
-        left: cw / 2,
-        top: ch / 2,
-        scale,
-      });
+      fabric.Image.fromURL(selectedFrame, { crossOrigin: 'anonymous' }).then((img) => {
+        const fabricW = (img.get('width') ?? (img as fabric.FabricObject & { width?: number }).width) ?? 1;
+        const fabricH = (img.get('height') ?? (img as fabric.FabricObject & { height?: number }).height) ?? 1;
+        const scaleX = cw / fabricW;
+        const scaleY = ch / fabricH;
+        img.set({
+          scaleX,
+          scaleY,
+          left: 0,
+          top: 0,
+          originX: 'left',
+          originY: 'top',
+          selectable: false,
+          evented: false,
+        });
 
-      canvas.add(img);
-      canvas.sendObjectToBack(img);
-
-      // Keep name/position text at bottom-center of new canvas
-      canvas.getObjects().forEach((obj) => {
-        if (obj.get('data')?.id === 'name-text') {
-          obj.set({ left: cw / 2, top: ch - 105, originX: 'center', originY: 'center' });
+        if (canvas.backgroundImage) {
+          (canvas.backgroundImage as fabric.FabricObject).dispose?.();
         }
-        if (obj.get('data')?.id === 'pos-text') {
-          obj.set({ left: cw / 2, top: ch - 70, originX: 'center', originY: 'center' });
-        }
-      });
+        canvas.backgroundImage = img;
 
-      canvas.renderAll();
-    });
+        canvas.getObjects().forEach((obj) => {
+          if (obj.get('data')?.id === 'name-text') {
+            obj.set({ left: cw / 2, top: ch - 105, originX: 'center', originY: 'center' });
+          }
+          if (obj.get('data')?.id === 'pos-text') {
+            obj.set({ left: cw / 2, top: ch - 70, originX: 'center', originY: 'center' });
+          }
+        });
+
+        canvas.requestRenderAll();
+        setFrameLoading(false);
+      }).catch(() => setFrameLoading(false));
+    };
+    probeImg.onerror = () => setFrameLoading(false);
+    probeImg.src = selectedFrame;
   }, [selectedFrame]);
 
   // 4. Background Removal Logic
@@ -230,8 +247,9 @@ export default function Home() {
         });
 
         img.set({ data: { type: 'user-photo' } });
-        img.scaleToWidth(300);
-        setPhotoZoom(img.scaleX! * 100);
+        const canvasW = canvas.getWidth();
+        img.scaleToWidth(Math.round(canvasW * 0.55));
+        setPhotoZoom((img.scaleX ?? 1) * 100);
 
         canvas.add(img);
         canvas.centerObject(img);
@@ -331,7 +349,16 @@ export default function Home() {
 
       {/* RIGHT CANVAS AREA */}
       <div className="flex flex-1 flex-col items-center justify-center bg-slate-100 p-4">
-        <div style={{ width: '500px', height: '500px' }} className="bg-white shadow-2xl overflow-hidden rounded-xl border-4 border-white">
+        <div
+          style={{ width: canvasSize.width, height: canvasSize.height }}
+          className="relative bg-white shadow-2xl rounded-xl border-4 border-white"
+        >
+          <div
+            className="absolute inset-0 flex items-center justify-center rounded-xl bg-slate-100 text-slate-500 font-medium z-10 transition-opacity"
+            style={{ visibility: frameLoading ? 'visible' : 'hidden', opacity: frameLoading ? 1 : 0 }}
+          >
+            Loading frame...
+          </div>
           <canvas ref={canvasRef} />
         </div>
         <button onClick={downloadImage} className="mt-8 w-full max-w-[500px] rounded-xl bg-red-600 p-4 font-bold text-white shadow-lg">
