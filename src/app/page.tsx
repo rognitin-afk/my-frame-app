@@ -363,17 +363,28 @@ export default function Home() {
 
       {/* RIGHT CANVAS AREA */}
       <div className="flex flex-1 flex-col items-center justify-center bg-slate-100 p-4">
+        {/* Outer wrapper: 2px padding only; canvas sits in exact-size inner box so image doesn't shift */}
         <div
-          style={{ width: canvasSize.width, height: canvasSize.height }}
-          className="relative bg-white shadow-2xl rounded-xl border-4 border-white"
+          style={{
+            width: canvasSize.width + 4,
+            height: canvasSize.height + 4,
+            padding: 2,
+            boxSizing: 'border-box',
+          }}
+          className="bg-white shadow-2xl rounded-xl border border-white"
         >
           <div
-            className="absolute inset-0 flex items-center justify-center rounded-xl bg-slate-100 text-slate-500 font-medium z-10 transition-opacity"
-            style={{ visibility: frameLoading ? 'visible' : 'hidden', opacity: frameLoading ? 1 : 0 }}
+            style={{ width: canvasSize.width, height: canvasSize.height }}
+            className="relative"
           >
-            Loading frame...
+            <div
+              className="absolute inset-0 flex items-center justify-center rounded-lg bg-slate-100 text-slate-500 font-medium z-10 transition-opacity"
+              style={{ visibility: frameLoading ? 'visible' : 'hidden', opacity: frameLoading ? 1 : 0 }}
+            >
+              Loading frame...
+            </div>
+            <canvas ref={canvasRef} />
           </div>
-          <canvas ref={canvasRef} />
         </div>
         <button onClick={downloadImage} className="mt-8 w-full max-w-[500px] rounded-xl bg-red-600 p-4 font-bold text-white shadow-lg">
           Download Final Poster
