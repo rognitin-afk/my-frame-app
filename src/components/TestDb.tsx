@@ -14,17 +14,23 @@ export default function TestDb({ onSuccess }: Props) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const allowedExtensions = [".webp", ".jpg", ".jpeg", ".png", ".heic", ".heif"];
+  const allowedTypes = ["image/webp", "image/jpeg", "image/png", "image/heic", "image/heif"];
+  const isAllowedImage = (f: File) =>
+    allowedTypes.includes(f.type) ||
+    allowedExtensions.some((ext) => f.name.toLowerCase().endsWith(ext));
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (!file.type.startsWith('image/')) {
-        setErrorMessage('Please choose an image (PNG, JPEG, WebP).');
+      if (!isAllowedImage(file)) {
+        setErrorMessage("Only WebP, JPG, PNG, and iPhone (HEIC/HEIF) are allowed.");
         setSelectedFile(null);
         return;
       }
-      setErrorMessage('');
+      setErrorMessage("");
       setSelectedFile(file);
-      if (!name.trim()) setName(file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '));
+      if (!name.trim()) setName(file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
     }
   };
 
@@ -76,7 +82,7 @@ export default function TestDb({ onSuccess }: Props) {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/png,image/jpeg,image/jpg,image/webp"
+        accept="image/webp,image/jpeg,image/png,image/heic,image/heif,.webp,.jpg,.jpeg,.png,.heic,.heif"
         onChange={handleFileChange}
         className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 file:text-slate-700 file:font-medium hover:file:bg-slate-200"
       />

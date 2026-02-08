@@ -1,13 +1,35 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
 import path from "path";
+import { v2 as cloudinary } from "cloudinary";
 import connectDB from "@/lib/mongodb";
 import Frame from "@/models/Frame";
 
-const FRAMES_DIR = path.join(process.cwd(), "public", "frames");
+// Only WebP, JPG, PNG, and iPhone (HEIC/HEIF)
+const ALLOWED_EXTENSIONS = new Set([".webp", ".jpg", ".jpeg", ".png", ".heic", ".heif"]);
+const ALLOWED_TYPES = new Set([
+  "image/webp", "image/jpeg", "image/png", "image/heic", "image/heif",
+]);
+
+function isAllowedImage(file: File): boolean {
+  const ext = path.extname(file.name).toLowerCase();
+  if (ALLOWED_EXTENSIONS.has(ext)) return true;
+  if (ALLOWED_TYPES.has(file.type)) return true;
+  return false;
+}
 
 export async function POST(request: Request) {
   try {
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+    if (!cloudName || !apiKey || !apiSecret) {
+      return NextResponse.json(
+        { error: "Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET." },
+        { status: 503 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const name = (formData.get("name") as string)?.trim();
@@ -20,27 +42,35 @@ export async function POST(request: Request) {
       );
     }
 
-    const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
-    if (!allowedTypes.includes(file.type)) {
+    if (!isAllowedImage(file)) {
       return NextResponse.json(
-        { error: "Invalid file type. Use PNG, JPEG, or WebP." },
+        { error: "Only WebP, JPG, PNG, and iPhone (HEIC/HEIF) images are allowed." },
         { status: 400 }
       );
     }
 
-    const ext = path.extname(file.name) || ".png";
-    const safeName = `${Date.now()}-${name.replace(/[^a-zA-Z0-9-_]/g, "-")}${ext}`;
-    const publicPath = `/frames/${safeName}`;
-    const filePath = path.join(FRAMES_DIR, safeName);
-
-    await mkdir(FRAMES_DIR, { recursive: true });
+    const ext = (path.extname(file.name) || ".png").toLowerCase();
+    const safeSlug = `${Date.now()}-${name.replace(/[^a-zA-Z0-9-_]/g, "-")}${ext}`;
     const bytes = await file.arrayBuffer();
-    await writeFile(filePath, Buffer.from(bytes));
+    const buffer = Buffer.from(bytes);
+
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+    });
+
+    const dataUri = `data:${file.type || "image/png"};base64,${buffer.toString("base64")}`;
+    const result = await cloudinary.uploader.upload(dataUri, {
+      folder: "frames",
+      public_id: safeSlug.replace(ext, ""),
+      overwrite: true,
+    });
 
     await connectDB();
     const newFrame = await Frame.create({
       name,
-      src: publicPath,
+      src: result.secure_url,
       category,
     });
 
