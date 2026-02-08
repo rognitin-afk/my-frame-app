@@ -66,9 +66,9 @@ export default function AdminPortal() {
           {/* Section: Add New */}
           <div className="lg:col-span-1 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
             <h2 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-6">1. Upload New Frame</h2>
-            <TestDb />
+            <TestDb onSuccess={loadFrames} />
             <p className="mt-4 text-[10px] text-slate-400 leading-relaxed italic">
-              Note: Ensure images are placed in /public/frames/ before adding to DB.
+              Choose an image from your computer — it will be saved to the app and added to the frame library.
             </p>
           </div>
 
