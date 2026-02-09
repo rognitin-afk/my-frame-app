@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Congress Canvas",
+  title: "Congress Canvas-CC",
   description: "Nepali Congress poster editor with Nepali support",
   icons: { icon: "/favicon.png" },
 };
