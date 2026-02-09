@@ -5,6 +5,7 @@ const FrameSchema = new Schema({
   name: { type: String, required: true },
   src: { type: String, required: true }, // This will be the image path
   category: { type: String, default: 'General' },
+  downloadCount: { type: Number, default: 0 },
 }, { 
   timestamps: true // This automatically adds 'createdAt' and 'updatedAt'
 });

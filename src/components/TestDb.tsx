@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 
 const MAX_UPLOAD_MB = 3;
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
