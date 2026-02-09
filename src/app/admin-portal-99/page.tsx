@@ -18,7 +18,7 @@ export default function AdminPortal() {
     try {
       const res = await fetch('/api/frame');
       const data = await res.json();
-      setFrames(data);
+      setFrames(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Fetch error:", err);
     } finally {
