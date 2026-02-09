@@ -27,8 +27,8 @@ export default function Home() {
   // --- STATES ---
   const [selectedFrame, setSelectedFrame] = useState<string | null>(null);
   const [dbFrames, setDbFrames] = useState<Frame[]>([]); // Using the Frame interface here
-  const [userName, setUserName] = useState('Your Name');
-  const [userPosition, setUserPosition] = useState('Campaign Member');
+  const [userName, setUserName] = useState('');
+  const [userPosition, setUserPosition] = useState('');
   const [isRemoving, setIsRemoving] = useState(false);
   const [photoZoom, setPhotoZoom] = useState(100);
   const [showAllFrames, setShowAllFrames] = useState(false);
