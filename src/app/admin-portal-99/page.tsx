@@ -2,18 +2,30 @@
 import { useEffect, useState } from 'react';
 import TestDb from '../../components/TestDb';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface Frame {
   _id: string;
   name: string;
   src: string;
+  downloadCount?: number;
 }
 
 export default function AdminPortal() {
+  const router = useRouter();
   const [frames, setFrames] = useState<Frame[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloadCount, setDownloadCount] = useState<number | null>(null);
 
-  // Function to refresh the list
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/admin-logout', { method: 'POST', credentials: 'same-origin' });
+      router.push('/admin-portal-99/login');
+    } catch {
+      router.push('/admin-portal-99/login');
+    }
+  };
+
   const loadFrames = async () => {
     try {
       const res = await fetch('/api/frame');
@@ -26,8 +38,19 @@ export default function AdminPortal() {
     }
   };
 
+  const loadStats = async () => {
+    try {
+      const res = await fetch('/api/stats');
+      const data = await res.json();
+      if (typeof data?.downloadCount === 'number') setDownloadCount(data.downloadCount);
+    } catch {
+      setDownloadCount(null);
+    }
+  };
+
   useEffect(() => {
     loadFrames();
+    loadStats();
   }, []);
 
   const handleDelete = async (id: string) => {
@@ -56,10 +79,24 @@ export default function AdminPortal() {
           <div>
             <h1 className="text-4xl font-black text-slate-900 tracking-tighter">ADMIN PORTAL</h1>
             <p className="text-slate-500 font-medium">Manage your MongoDB frame library</p>
+            {downloadCount !== null && (
+              <p className="mt-1 text-sm font-semibold text-slate-700">
+                Downloads: <span className="text-slate-900">{downloadCount.toLocaleString()}</span>
+              </p>
+            )}
           </div>
-          <Link href="/" className="text-xs font-bold bg-white px-4 py-2 rounded-full border shadow-sm hover:text-red-600 transition-all">
-            EXIT TO EDITOR →
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="text-xs font-bold bg-slate-100 px-4 py-2 rounded-full border border-slate-200 hover:bg-slate-200 transition-all"
+            >
+              LOGOUT
+            </button>
+            <Link href="/" className="text-xs font-bold bg-white px-4 py-2 rounded-full border shadow-sm hover:text-red-600 transition-all">
+              EXIT TO EDITOR →
+            </Link>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -89,6 +126,9 @@ export default function AdminPortal() {
                       <div>
                         <p className="font-bold text-slate-800">{frame.name}</p>
                         <p className="text-[10px] text-slate-400 font-mono">{frame._id}</p>
+                        <p className="text-xs font-semibold text-slate-600 mt-0.5">
+                          Downloads: {(frame.downloadCount ?? 0).toLocaleString()}
+                        </p>
                       </div>
                     </div>
                     <button 
