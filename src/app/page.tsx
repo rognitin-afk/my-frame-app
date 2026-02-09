@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
-import { Upload, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, Sparkles, ChevronRight, LayoutTemplate } from 'lucide-react';
 import "./globals.css";
 
 // This Interface fixes the "Unexpected any" error by defining what a Frame is
@@ -31,7 +31,7 @@ export default function Home() {
   const [userPosition, setUserPosition] = useState('');
   const [isRemoving, setIsRemoving] = useState(false);
   const [photoZoom, setPhotoZoom] = useState(100);
-  const [showAllFrames, setShowAllFrames] = useState(false);
+  const [rightFramesOpen, setRightFramesOpen] = useState(true);
   const [canvasSize, setCanvasSize] = useState({ width: 500, height: 500 });
   const [frameLoading, setFrameLoading] = useState(false);
   const bgRemovePreloaded = useRef(false);
@@ -86,7 +86,6 @@ export default function Home() {
 
   // --- SIDEBAR LOGIC ---
   const framesList = Array.isArray(dbFrames) ? dbFrames : [];
-  const displayedFrames = showAllFrames ? framesList : framesList.slice(0, 4);
 
   const handleSelectFrame = (frameSrc: string) => {
     if (frameSrc === selectedFrame) return;
@@ -362,50 +361,10 @@ export default function Home() {
       <aside className="w-full border-r bg-card p-6 shadow-sm md:w-[380px] overflow-y-auto max-h-screen">
         <h1 className="mb-6 text-xl font-semibold tracking-tight text-foreground">Campaign Editor</h1>
 
-        {/* 1. Frame Selection */}
-        <Card className="mb-6">
-          <CardHeader
-            className="cursor-pointer pb-2"
-            onClick={() => setShowAllFrames(!showAllFrames)}
-            onKeyDown={(e) => e.key === 'Enter' && setShowAllFrames((v) => !v)}
-            role="button"
-            tabIndex={0}
-          >
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                1. Select Frame {showAllFrames ? '(Showing All)' : `(${dbFrames.length} loaded)`}
-              </CardTitle>
-              <span className="text-muted-foreground" aria-hidden>
-                {showAllFrames ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-              </span>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className={`grid grid-cols-2 gap-2 transition-all duration-300 ${showAllFrames ? 'max-h-[360px] overflow-y-auto' : 'max-h-[180px]'}`}>
-              {displayedFrames.map((frame) => (
-                <button
-                  key={frame._id}
-                  type="button"
-                  onClick={() => handleSelectFrame(frame.src)}
-                  className={`relative h-20 w-full rounded-md border-2 transition-colors overflow-hidden ${
-                    selectedFrame === frame.src
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border hover:border-primary/50 bg-muted/30'
-                  }`}
-                >
-                  <img src={frame.src} alt={frame.name} className="object-contain size-full p-1.5" />
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Separator className="mb-6" />
-
-        {/* 2. Text Details */}
+        {/* 1. Text Details */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">2. Person details</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">1. Person details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-2">
@@ -421,10 +380,10 @@ export default function Home() {
 
         <Separator className="mb-6" />
 
-        {/* 3. Upload & AI */}
+        {/* 2. Upload & AI */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">3. Photo & AI</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">2. Photo & AI</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90">
@@ -446,10 +405,10 @@ export default function Home() {
 
         <Separator className="mb-6" />
 
-        {/* 4. Edit Photo */}
+        {/* 3. Edit Photo */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">4. Edit photo</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">3. Edit photo</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -466,8 +425,8 @@ export default function Home() {
         </Card>
       </aside>
 
-      {/* RIGHT CANVAS AREA */}
-      <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 p-6">
+      {/* CENTER: Canvas + Download */}
+      <div className="flex flex-1 flex-col items-center justify-center bg-muted/50 p-6 min-w-0">
         <div
           style={{
             width: canvasSize.width + 4,
@@ -511,6 +470,65 @@ export default function Home() {
           Download poster
         </Button>
       </div>
+
+      {/* RIGHT: Collapsible frames sidebar */}
+      <aside
+        className={`flex flex-col border-l bg-card shadow-sm transition-[width] duration-200 overflow-hidden h-screen shrink-0 ${
+          rightFramesOpen ? 'w-[280px]' : 'w-12'
+        }`}
+      >
+        <div className="flex items-center justify-between border-b p-2 min-h-11 shrink-0">
+          {rightFramesOpen ? (
+            <>
+              <span className="text-xs font-medium text-muted-foreground truncate px-1">
+                Templates ({dbFrames.length})
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setRightFramesOpen(false)}
+                aria-label="Collapse templates"
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-full"
+              onClick={() => setRightFramesOpen(true)}
+              aria-label="Expand templates"
+            >
+              <LayoutTemplate className="size-5" />
+            </Button>
+          )}
+        </div>
+        {rightFramesOpen && (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-2">
+            <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-y-auto">
+              {framesList.map((frame) => (
+                <button
+                  key={frame._id}
+                  type="button"
+                  onClick={() => handleSelectFrame(frame.src)}
+                  className={`relative w-full rounded-md border-2 transition-colors overflow-hidden flex-shrink-0 max-h-[50vh] ${
+                    selectedFrame === frame.src
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50 bg-muted/30'
+                  }`}
+                >
+                  <img
+                    src={frame.src}
+                    alt={frame.name}
+                    className="w-full h-auto object-contain block"
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </aside>
     </main>
   );
 }
