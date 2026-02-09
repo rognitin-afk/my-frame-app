@@ -16,6 +16,29 @@ function decodeBase64Url(s: string): Uint8Array {
   return new Uint8Array(Buffer.from(s, "base64url"));
 }
 
+/** Base64URL decode to string; works in Edge (atob) and Node (Buffer). */
+function base64UrlDecodeToStr(s: string): string {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = b64.length % 4;
+  const padded = pad ? b64 + "=".repeat(4 - pad) : b64;
+  if (typeof globalThis.atob !== "undefined") {
+    return globalThis.atob(padded);
+  }
+  return Buffer.from(padded, "base64").toString("utf8");
+}
+
+/** Base64URL decode to bytes; works in Edge and Node. */
+function base64UrlDecodeToBytes(s: string): Uint8Array {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = b64.length % 4;
+  const padded = pad ? b64 + "=".repeat(4 - pad) : b64;
+  const str =
+    typeof globalThis.atob !== "undefined"
+      ? globalThis.atob(padded)
+      : Buffer.from(padded, "base64").toString("latin1");
+  return Uint8Array.from(str, (c) => c.charCodeAt(0));
+}
+
 /** Constant-time comparison for password check (Node). */
 export function constantTimeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a, "utf8");
@@ -59,7 +82,7 @@ export async function verifyAdminCookie(
   const sigB64 = raw.slice(dot + 1);
   let payload: CookiePayload;
   try {
-    const payloadStr = Buffer.from(payloadB64, "base64url").toString("utf8");
+    const payloadStr = base64UrlDecodeToStr(payloadB64);
     payload = JSON.parse(payloadStr) as CookiePayload;
   } catch {
     return { valid: false };
@@ -69,7 +92,7 @@ export async function verifyAdminCookie(
   }
   const key = await importHmacKey(secret);
   const payloadBytes = new TextEncoder().encode(payloadB64);
-  const sigBytes = decodeBase64Url(sigB64);
+  const sigBytes = base64UrlDecodeToBytes(sigB64);
   const expectedSig = await signHmac(key, payloadBytes);
   if (sigBytes.length !== expectedSig.length || !timingSafeEqual(sigBytes, expectedSig)) {
     return { valid: false };
@@ -125,7 +148,16 @@ export async function requireAdminResponse(
   request: Request
 ): Promise<Response | null> {
   const secret = getAdminSessionSecret();
-  if (!secret) return null; // not configured: allow
+  const isProd = process.env.NODE_ENV === "production";
+  if (!secret) {
+    if (isProd) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    return null; // dev: allow when not configured
+  }
   const cookieHeader = request.headers.get("cookie");
   const result = await verifyAdminCookie(cookieHeader, secret);
   if (!result.valid) {
