@@ -49,6 +49,7 @@ export default function AdminLoginPage() {
               autoFocus
               disabled={loading}
               className="rounded-xl"
+              suppressHydrationWarning
             />
             {error && (
               <p className="text-sm text-red-600 font-medium">{error}</p>

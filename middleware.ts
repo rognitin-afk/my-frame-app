@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getApiRateLimiter, isRateLimitEnabled } from "@/lib/ratelimit";
+import { verifyAdminCookie, getAdminSessionSecret } from "@/lib/auth-admin";
 
 function getClientIp(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -12,6 +13,29 @@ function getClientIp(request: NextRequest): string {
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
+
+  // Protect admin portal pages (except login): require valid admin session
+  if (path.startsWith("/admin-portal-99")) {
+    if (path === "/admin-portal-99/login" || path.startsWith("/admin-portal-99/login/")) {
+      return NextResponse.next();
+    }
+    const secret = getAdminSessionSecret();
+    const isProd = process.env.NODE_ENV === "production";
+    if (!secret) {
+      if (isProd) {
+        return NextResponse.redirect(new URL("/admin-portal-99/login", request.url));
+      }
+      return NextResponse.next();
+    }
+    const cookieHeader = request.headers.get("cookie");
+    const result = await verifyAdminCookie(cookieHeader, secret);
+    if (!result.valid) {
+      return NextResponse.redirect(new URL("/admin-portal-99/login", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  // API rate limiting
   if (!path.startsWith("/api/")) {
     return NextResponse.next();
   }
@@ -50,5 +74,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/:path*"],
+  matcher: ["/api/:path*", "/admin-portal-99", "/admin-portal-99/:path*"],
 };

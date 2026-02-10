@@ -5,7 +5,6 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Slider } from "../components/ui/slider";
 import { Separator } from "../components/ui/separator";
 import { Upload, Sparkles, ChevronRight, LayoutTemplate, ImageIcon, Images, Trash2 } from "lucide-react";
 import { compressToMax3MB } from "@/lib/compress-image";
@@ -44,8 +43,10 @@ export default function Home() {
   const [dbAssets, setDbAssets] = useState<Asset[]>([]);
   const [userName, setUserName] = useState("");
   const [userPosition, setUserPosition] = useState("");
+  const [nameTextColor, setNameTextColor] = useState("#006400");
+  const [positionTextColor, setPositionTextColor] = useState("#444444");
   const [isRemoving, setIsRemoving] = useState(false);
-  const [photoZoom, setPhotoZoom] = useState(100);
+  const userPhotoRef = useRef<fabric.FabricImage | null>(null);
   const [rightFramesOpen, setRightFramesOpen] = useState(true);
   const [rightPanelTab, setRightPanelTab] = useState<"templates" | "assets" | "images">("templates");
   const [localImages, setLocalImages] = useState<LocalImage[]>([]);
@@ -177,7 +178,6 @@ export default function Home() {
       });
       canvas.requestRenderAll();
     }
-    setPhotoZoom(100);
     setSelectedFrame(frameSrc);
   };
 
@@ -217,6 +217,7 @@ export default function Home() {
     let removed = false;
     toProcess.forEach((obj) => {
       if (obj.type === "Image" || obj.type === "image" || obj instanceof fabric.FabricImage) {
+        if (obj.get("data")?.type === "user-photo") userPhotoRef.current = null;
         canvas.remove(obj);
         removed = true;
       }
@@ -333,17 +334,19 @@ export default function Home() {
         (obj as fabric.IText).set({
           text: userName,
           fontFamily: "Noto Sans Devanagari, Arial",
+          fill: nameTextColor,
         });
       }
       if (obj.get("data")?.id === "pos-text") {
         (obj as fabric.IText).set({
           text: userPosition,
           fontFamily: "Noto Sans Devanagari, Arial",
+          fill: positionTextColor,
         });
       }
     });
     canvas.renderAll();
-  }, [userName, userPosition]);
+  }, [userName, userPosition, nameTextColor, positionTextColor]);
 
   // 3. Frame: empty canvas until a template is set; then load image as background (not selectable)
   const MAX_CANVAS = 500;
@@ -517,6 +520,7 @@ export default function Home() {
           scaleY: userPhoto.scaleY,
           data: { type: "user-photo" },
         });
+        userPhotoRef.current = img;
         canvas.remove(userPhoto);
         canvas.add(img);
         canvas.bringObjectToFront(img);
@@ -530,19 +534,6 @@ export default function Home() {
     } catch (error) {
       console.error(error);
       setIsRemoving(false);
-    }
-  };
-
-  // 5. Photo Zoom Logic
-  const handleZoom = (val: number) => {
-    setPhotoZoom(val);
-    const canvas = fabricRef.current;
-    const photo = canvas
-      ?.getObjects()
-      .find((obj) => obj.get("data")?.type === "user-photo");
-    if (photo) {
-      photo.scale(val / 100);
-      canvas?.renderAll();
     }
   };
 
@@ -572,6 +563,7 @@ export default function Home() {
       }
 
       const canvas = fabricRef.current;
+      userPhotoRef.current = null;
       canvas.getObjects().forEach((obj) => {
         if (obj.get("data")?.type === "user-photo") canvas.remove(obj);
       });
@@ -587,7 +579,7 @@ export default function Home() {
           scaleY: scaleToFit,
           data: { type: "user-photo" },
         });
-        setPhotoZoom(scaleToFit * 100);
+        userPhotoRef.current = img;
         canvas.add(img);
         canvas.centerObject(img);
         canvas.bringObjectToFront(img);
@@ -723,21 +715,45 @@ export default function Home() {
             <CardContent className="space-y-2 p-0 pt-0">
               <div className="space-y-1">
                 <Label htmlFor="name">Full name</Label>
-                <Input
-                  id="name"
-                  value={userName}
-                  onChange={(e) => setUserName(e.target.value)}
-                  placeholder="Full Name"
-                />
+                <div className="flex gap-2 items-center">
+                  <Input
+                    id="name"
+                    value={userName}
+                    onChange={(e) => setUserName(e.target.value)}
+                    placeholder="Full Name"
+                    className="flex-1 min-w-0"
+                  />
+                  <div className="flex items-center shrink-0 rounded-xl border border-input bg-muted/30 px-1.5 py-1">
+                    <input
+                      type="color"
+                      value={nameTextColor}
+                      onChange={(e) => setNameTextColor(e.target.value)}
+                      className="h-8 w-8 cursor-pointer rounded-lg border-0 bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-lg [&::-webkit-color-swatch]:border-[2px] [&::-webkit-color-swatch]:border-input"
+                      title="Name color"
+                    />
+                  </div>
+                </div>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="position">Position</Label>
-                <Input
-                  id="position"
-                  value={userPosition}
-                  onChange={(e) => setUserPosition(e.target.value)}
-                  placeholder="Position"
-                />
+                <div className="flex gap-2 items-center">
+                  <Input
+                    id="position"
+                    value={userPosition}
+                    onChange={(e) => setUserPosition(e.target.value)}
+                    placeholder="Position"
+                    className="flex-1 min-w-0"
+                  />
+                  <div className="flex items-center shrink-0 rounded-xl border border-input bg-muted/30 px-1.5 py-1">
+                    <input
+                      type="color"
+                      value={positionTextColor}
+                      onChange={(e) => setPositionTextColor(e.target.value)}
+                      className="h-8 w-8 cursor-pointer rounded-lg border-0 bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-lg [&::-webkit-color-swatch]:border-[2px] [&::-webkit-color-swatch]:border-input"
+                      title="Position color"
+                    />
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -784,14 +800,6 @@ export default function Home() {
             </CardHeader>
             <CardContent className="p-0 pt-0">
               <div className="space-y-2">
-                <Label>Photo zoom — {Math.round(photoZoom)}%</Label>
-                <Slider
-                  min={10}
-                  max={200}
-                  value={[photoZoom]}
-                  onValueChange={(v) => handleZoom(v[0] ?? 100)}
-                  className="w-full"
-                />
                 <Button
                   variant="outline"
                   className="w-full gap-2"
