@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Slider } from "../components/ui/slider";
 import { Separator } from "../components/ui/separator";
 import { Upload, Sparkles, ChevronRight, LayoutTemplate } from "lucide-react";
+import { compressToMax3MB } from "@/lib/compress-image";
 import "./globals.css";
 
 // This Interface fixes the "Unexpected any" error by defining what a Frame is
@@ -34,6 +35,7 @@ export default function Home() {
   const [rightFramesOpen, setRightFramesOpen] = useState(true);
   const [canvasSize, setCanvasSize] = useState({ width: 500, height: 500 });
   const [frameLoading, setFrameLoading] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const bgRemovePreloaded = useRef(false);
 
   // --- PRELOAD BACKGROUND-REMOVAL MODEL IN BACKGROUND (does not block UI) ---
@@ -312,36 +314,45 @@ export default function Home() {
       setIsRemoving(true);
       const imageSrc = userPhoto.getSrc();
       const { removeBackground } = await import("@imgly/background-removal");
-      const blob = await removeBackground(imageSrc);
-      const transparentUrl = URL.createObjectURL(blob);
+      const blob = await removeBackground(imageSrc, {
+        output: { format: "image/png", quality: 1 },
+      });
 
-      fabric.Image.fromURL(transparentUrl)
-        .then((img) => {
-          img.set({
-            left: userPhoto.left,
-            top: userPhoto.top,
-            scaleX: userPhoto.scaleX,
-            scaleY: userPhoto.scaleY,
-            data: { type: "user-photo" },
-          });
+      const { blob: uploadBlob, filename } = await compressToMax3MB(blob, "photo.png");
+      const formData = new FormData();
+      formData.append("file", uploadBlob, filename);
+      const res = await fetch("/api/upload-photo", { method: "POST", body: formData });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setIsRemoving(false);
+        alert(data?.error || "Upload failed");
+        return;
+      }
+      const url = data?.url;
+      if (!url || typeof url !== "string") {
+        setIsRemoving(false);
+        alert("Invalid response");
+        return;
+      }
 
-          canvas.remove(userPhoto);
-          canvas.add(img);
-          canvas.bringObjectToFront(img);
-
-          canvas.getObjects().forEach((obj) => {
-            if (obj.get("data")?.id?.includes("text"))
-              canvas.bringObjectToFront(obj);
-          });
-
-          canvas.renderAll();
-          URL.revokeObjectURL(transparentUrl);
-          setIsRemoving(false);
-        })
-        .catch(() => {
-          URL.revokeObjectURL(transparentUrl);
-          setIsRemoving(false);
+      fabric.Image.fromURL(url, { crossOrigin: "anonymous" }).then((img) => {
+        img.set({
+          left: userPhoto.left,
+          top: userPhoto.top,
+          scaleX: userPhoto.scaleX,
+          scaleY: userPhoto.scaleY,
+          data: { type: "user-photo" },
         });
+        canvas.remove(userPhoto);
+        canvas.add(img);
+        canvas.bringObjectToFront(img);
+        canvas.getObjects().forEach((obj) => {
+          if (obj.get("data")?.id?.includes("text"))
+            canvas.bringObjectToFront(obj);
+        });
+        canvas.renderAll();
+        setIsRemoving(false);
+      });
     } catch (error) {
       console.error(error);
       setIsRemoving(false);
@@ -361,65 +372,163 @@ export default function Home() {
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !fabricRef.current) return;
 
-    const reader = new FileReader();
-    reader.onload = (f) => {
-      const data = f.target?.result;
-      fabric.Image.fromURL(data as string).then((img) => {
-        const canvas = fabricRef.current!;
-        canvas.getObjects().forEach((obj) => {
-          if (obj.get("data")?.type === "user-photo") canvas.remove(obj);
-        });
+    setPhotoUploading(true);
+    try {
+      const { blob, filename } = await compressToMax3MB(file);
+      const formData = new FormData();
+      formData.append("file", blob, filename);
 
-        img.set({ data: { type: "user-photo" } });
+      const res = await fetch("/api/upload-photo", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data?.error || "Upload failed");
+        return;
+      }
+      const url = data?.url;
+      if (!url || typeof url !== "string") {
+        alert("Invalid response");
+        return;
+      }
+
+      const canvas = fabricRef.current;
+      canvas.getObjects().forEach((obj) => {
+        if (obj.get("data")?.type === "user-photo") canvas.remove(obj);
+      });
+
+      fabric.Image.fromURL(url, { crossOrigin: "anonymous" }).then((img) => {
         const canvasW = canvas.getWidth();
-        img.scaleToWidth(Math.round(canvasW * 0.55));
-        setPhotoZoom((img.scaleX ?? 1) * 100);
-
+        const canvasH = canvas.getHeight();
+        const w = (img.get("width") as number) ?? 1;
+        const h = (img.get("height") as number) ?? 1;
+        const scaleToFit = Math.min(1, canvasW / w, canvasH / h);
+        img.set({
+          scaleX: scaleToFit,
+          scaleY: scaleToFit,
+          data: { type: "user-photo" },
+        });
+        setPhotoZoom(scaleToFit * 100);
         canvas.add(img);
         canvas.centerObject(img);
         canvas.bringObjectToFront(img);
-
         canvas.getObjects().forEach((obj) => {
           if (obj.get("data")?.id?.includes("text"))
             canvas.bringObjectToFront(obj);
         });
-
         canvas.setActiveObject(img);
         canvas.renderAll();
       });
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error(err);
+      alert("Upload failed");
+    } finally {
+      setPhotoUploading(false);
+    }
+
+    e.target.value = "";
   };
 
-  const downloadImage = () => {
+  const downloadImage = async () => {
     const canvas = fabricRef.current;
     if (!canvas) return;
-    const dataURL = canvas.toDataURL({
-      format: "png",
-      quality: 1,
-      multiplier: 1,
-    });
-    const link = document.createElement("a");
-    link.download = "poster.png";
-    link.href = dataURL;
-    link.click();
-    const currentFrame = framesList.find((f) => f.src === selectedFrame);
-    const frameId = currentFrame?._id ?? null;
-    fetch("/api/stats/download", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ frameId }),
-    }).catch(() => {});
+
+    const doDownload = (dataURL: string) => {
+      const link = document.createElement("a");
+      link.download = "poster.png";
+      link.href = dataURL;
+      link.click();
+      const currentFrame = framesList.find((f) => f.src === selectedFrame);
+      const frameId = currentFrame?._id ?? null;
+      fetch("/api/stats/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ frameId }),
+      }).catch(() => {});
+    };
+
+    const exportScale = 3;
+    const w = canvas.getWidth();
+    const h = canvas.getHeight();
+
+    const blobToDataURL = (blob: Blob): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result as string);
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+
+    const inlineExternalImagesInSvg = async (svgString: string): Promise<string> => {
+      const urlRegex = /((?:xlink:)?href=")(https?:\/\/[^"]+)(")/g;
+      const matches = [...svgString.matchAll(urlRegex)];
+      const uniqueByUrl = new Map<string, string>();
+      for (const m of matches) {
+        const url = m[2]!;
+        if (uniqueByUrl.has(url)) continue;
+        try {
+          const res = await fetch(url, { mode: "cors" });
+          if (!res.ok) continue;
+          const blob = await res.blob();
+          const dataUrl = await blobToDataURL(blob);
+          uniqueByUrl.set(url, dataUrl);
+        } catch {
+          // leave URL as-is if fetch fails (CORS etc.)
+        }
+      }
+      if (uniqueByUrl.size === 0) return svgString;
+      return svgString.replace(urlRegex, (_, prefix: string, url: string, suffix: string) => {
+        const dataUrl = uniqueByUrl.get(url);
+        return dataUrl ? `${prefix}${dataUrl}${suffix}` : `${prefix}${url}${suffix}`;
+      });
+    };
+
+    try {
+      let svgString = canvas.toSVG();
+      svgString = await inlineExternalImagesInSvg(svgString);
+
+      const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+      const svgUrl = URL.createObjectURL(svgBlob);
+
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("SVG load failed"));
+        el.src = svgUrl;
+      });
+
+      const outW = w * exportScale;
+      const outH = h * exportScale;
+      const offscreen = document.createElement("canvas");
+      offscreen.width = outW;
+      offscreen.height = outH;
+      const ctx = offscreen.getContext("2d");
+      if (!ctx) throw new Error("No 2d context");
+
+      ctx.drawImage(img, 0, 0, outW, outH);
+      URL.revokeObjectURL(svgUrl);
+
+      const dataURL = offscreen.toDataURL("image/png");
+      doDownload(dataURL);
+    } catch {
+      const dataURL = canvas.toDataURL({
+        format: "png",
+        quality: 1,
+        multiplier: exportScale,
+      });
+      doDownload(dataURL);
+    }
   };
 
   return (
     <main className="flex min-h-screen w-full flex-col bg-muted/30 md:flex-row">
       {/* LEFT SIDEBAR */}
-      <aside className="w-full border-r bg-card p-6 shadow-sm md:w-[380px] overflow-y-auto max-h-screen">
+      <aside className="w-full border-r bg-card p-6 shadow-sm md:w-[380px] overflow-y-auto max-h-screen" suppressHydrationWarning>
         <div className="mb-4 flex items-center gap-2">
           <img
             src="/favicon.png"
@@ -470,14 +579,15 @@ export default function Home() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            <Label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
               <Upload className="size-4" />
-              Upload photo
+              {photoUploading ? "Uploading…" : "Upload photo"}
               <input
                 type="file"
                 className="sr-only"
                 onChange={handleImageUpload}
                 accept="image/*"
+                disabled={photoUploading}
               />
             </Label>
             <Button
