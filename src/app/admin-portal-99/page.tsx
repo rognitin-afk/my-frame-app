@@ -24,8 +24,11 @@ interface Asset {
 
 type AdminTab = 'frames' | 'assets';
 
+type AuthStatus = 'pending' | 'authorized' | 'unauthorized';
+
 export default function AdminPortal() {
   const router = useRouter();
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('pending');
   const [tab, setTab] = useState<AdminTab>('frames');
   const [frames, setFrames] = useState<Frame[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -34,12 +37,31 @@ export default function AdminPortal() {
   const [downloadCount, setDownloadCount] = useState<number | null>(null);
   const [uploadModal, setUploadModal] = useState<UploadModal>(null);
 
+  // Restrict client-side: no valid admin cookie (API returns 401) -> redirect to login
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/stats', { credentials: 'same-origin' })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.status === 401) setAuthStatus('unauthorized');
+        else setAuthStatus('authorized');
+      })
+      .catch(() => {
+        if (!cancelled) setAuthStatus('unauthorized');
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (authStatus === 'unauthorized') router.replace('/admin-login');
+  }, [authStatus, router]);
+
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/admin-logout', { method: 'POST', credentials: 'same-origin' });
-      router.push('/admin-portal-99/login');
+      router.push('/admin-login');
     } catch {
-      router.push('/admin-portal-99/login');
+      router.push('/admin-login');
     }
   };
 
@@ -77,28 +99,16 @@ export default function AdminPortal() {
     }
   };
 
-  // Redirect to login if not authenticated (APIs return 401)
   useEffect(() => {
-    let cancelled = false;
-    fetch('/api/frame', { credentials: 'same-origin' })
-      .then((res) => {
-        if (cancelled) return;
-        if (res.status === 401) router.replace('/admin-portal-99/login');
-      })
-      .catch(() => {
-        if (!cancelled) router.replace('/admin-portal-99/login');
-      });
-    return () => { cancelled = true; };
-  }, [router]);
+    if (authStatus === 'authorized') {
+      loadFrames();
+      loadStats();
+    }
+  }, [authStatus]);
 
   useEffect(() => {
-    loadFrames();
-    loadStats();
-  }, []);
-
-  useEffect(() => {
-    if (tab === 'assets') loadAssets();
-  }, [tab]);
+    if (authStatus === 'authorized' && tab === 'assets') loadAssets();
+  }, [authStatus, tab]);
 
   const handleDeleteFrame = async (id: string) => {
     if (!confirm("Are you sure you want to delete this frame?")) return;
@@ -135,6 +145,14 @@ export default function AdminPortal() {
       alert("Delete failed");
     }
   };
+
+  if (authStatus !== 'authorized') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <p className="text-slate-500 text-sm">Checking access…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-6">

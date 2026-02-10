@@ -12,25 +12,22 @@ function getClientIp(request: NextRequest): string {
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
-  // Admin portal: protect /admin-portal-99 except login
+  // Admin portal: protect /admin-portal-99 only (login is separate at /admin-login)
   if (path.startsWith("/admin-portal-99")) {
-    if (path === "/admin-portal-99/login" || path.startsWith("/admin-portal-99/login/")) {
-      return NextResponse.next();
-    }
     try {
       const { verifyAdminCookie, getAdminSessionSecret } = await import("@/lib/auth-admin");
       const secret = getAdminSessionSecret();
       const isProd = process.env.NODE_ENV === "production";
       if (!secret) {
         if (isProd) {
-          return NextResponse.redirect(new URL("/admin-portal-99/login", request.url));
+          return NextResponse.redirect(new URL("/admin-login", request.url));
         }
         return NextResponse.next();
       }
       const cookieHeader = request.headers.get("cookie");
       const result = await verifyAdminCookie(cookieHeader, secret);
       if (!result.valid) {
-        return NextResponse.redirect(new URL("/admin-portal-99/login", request.url));
+        return NextResponse.redirect(new URL("/admin-login", request.url));
       }
     } catch {
       return NextResponse.next();
