@@ -709,8 +709,8 @@ export default function Home() {
             alt=""
             className="size-8 shrink-0 object-contain"
           />
-          <h1 className="text-xl font-semibold tracking-tight text-foreground truncate">
-            Congress Canvas
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            Congress Canvas(CC)
           </h1>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
