@@ -59,7 +59,7 @@ export default function AdminLoginPage() {
           </form>
         </div>
         <p className="mt-4 text-center">
-          <Link href="/" className="text-xs font-bold text-slate-500 hover:text-slate-700">
+          <Link href="/" className="text-xs font-bold text-slate-500 hover:text-primary">
             ← Back to editor
           </Link>
         </p>
