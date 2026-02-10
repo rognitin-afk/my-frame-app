@@ -9,8 +9,36 @@ function getClientIp(request: NextRequest): string {
   return "unknown";
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
+
+  // Admin portal: protect /admin-portal-99 except login
+  if (path.startsWith("/admin-portal-99")) {
+    if (path === "/admin-portal-99/login" || path.startsWith("/admin-portal-99/login/")) {
+      return NextResponse.next();
+    }
+    try {
+      const { verifyAdminCookie, getAdminSessionSecret } = await import("@/lib/auth-admin");
+      const secret = getAdminSessionSecret();
+      const isProd = process.env.NODE_ENV === "production";
+      if (!secret) {
+        if (isProd) {
+          return NextResponse.redirect(new URL("/admin-portal-99/login", request.url));
+        }
+        return NextResponse.next();
+      }
+      const cookieHeader = request.headers.get("cookie");
+      const result = await verifyAdminCookie(cookieHeader, secret);
+      if (!result.valid) {
+        return NextResponse.redirect(new URL("/admin-portal-99/login", request.url));
+      }
+    } catch {
+      return NextResponse.next();
+    }
+    return NextResponse.next();
+  }
+
+  // API: rate limit (skip /api/auth/admin-login)
   if (!path.startsWith("/api/")) return NextResponse.next();
   if (path === "/api/auth/admin-login") return NextResponse.next();
 
@@ -43,5 +71,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/:path*"],
+  matcher: ["/api/:path*", "/admin-portal-99", "/admin-portal-99/:path*"],
 };
