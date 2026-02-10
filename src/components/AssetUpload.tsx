@@ -7,19 +7,18 @@ type Props = {
   onSuccess?: () => void;
 };
 
-export default function TestDb({ onSuccess }: Props) {
+const allowedExtensions = [".webp", ".jpg", ".jpeg", ".png", ".heic", ".heif"];
+const allowedTypes = ["image/webp", "image/jpeg", "image/png", "image/heic", "image/heif"];
+const isAllowedImage = (f: File) =>
+  allowedTypes.includes(f.type) ||
+  allowedExtensions.some((ext) => f.name.toLowerCase().endsWith(ext));
+
+export default function AssetUpload({ onSuccess }: Props) {
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [name, setName] = useState('');
-  const [category, setCategory] = useState('General');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const allowedExtensions = [".webp", ".jpg", ".jpeg", ".png", ".heic", ".heif"];
-  const allowedTypes = ["image/webp", "image/jpeg", "image/png", "image/heic", "image/heif"];
-  const isAllowedImage = (f: File) =>
-    allowedTypes.includes(f.type) ||
-    allowedExtensions.some((ext) => f.name.toLowerCase().endsWith(ext));
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -45,17 +44,13 @@ export default function TestDb({ onSuccess }: Props) {
     setStatus('saving');
     setErrorMessage('');
 
-    const trimmedName = name.trim();
-    const trimmedCategory = category.trim() || 'General';
-
     try {
       const { blob, filename } = await compressToMax3MB(selectedFile);
       const formData = new FormData();
       formData.append('file', blob, filename);
-      formData.append('name', trimmedName);
-      formData.append('category', trimmedCategory);
+      formData.append('name', name.trim());
 
-      const response = await fetch('/api/frame/upload', {
+      const response = await fetch('/api/asset/upload', {
         method: 'POST',
         body: formData,
       });
@@ -65,7 +60,6 @@ export default function TestDb({ onSuccess }: Props) {
       if (response.ok) {
         setStatus('success');
         setName('');
-        setCategory('General');
         setSelectedFile(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
         onSuccess?.();
@@ -74,7 +68,7 @@ export default function TestDb({ onSuccess }: Props) {
         setErrorMessage(data.error || 'Upload failed');
       }
     } catch (err) {
-      console.error('Upload error:', err);
+      console.error('Asset upload error:', err);
       setStatus('error');
       setErrorMessage('Connection failed');
     }
@@ -84,13 +78,15 @@ export default function TestDb({ onSuccess }: Props) {
     <form onSubmit={handleUpload} className="flex flex-col gap-3 w-full">
       <label className="flex flex-col gap-1.5">
         <span className="text-xs font-medium text-slate-600">File</span>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/webp,image/jpeg,image/png,image/heic,image/heif,.webp,.jpg,.jpeg,.png,.heic,.heif"
-          onChange={handleFileChange}
-          className="text-sm text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border file:border-primary/40 file:bg-primary/5 file:text-primary file:text-sm file:font-medium hover:file:bg-primary/10 file:transition-colors file:cursor-pointer"
-        />
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/webp,image/jpeg,image/png,image/heic,image/heif,.webp,.jpg,.jpeg,.png,.heic,.heif"
+            onChange={handleFileChange}
+            className="flex-1 text-sm text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border file:border-primary/40 file:bg-primary/5 file:text-primary file:text-sm file:font-medium hover:file:bg-primary/10 file:transition-colors file:cursor-pointer"
+          />
+        </div>
       </label>
       {selectedFile && (
         <p className="text-xs text-slate-500 truncate" title={selectedFile.name}>
@@ -99,23 +95,12 @@ export default function TestDb({ onSuccess }: Props) {
       )}
 
       <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-slate-600">Frame name</span>
+        <span className="text-xs font-medium text-slate-600">Asset name</span>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Election Frame"
-          className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-        />
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-slate-600">Category</span>
-        <input
-          type="text"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          placeholder="General"
+          placeholder="e.g. Star badge"
           className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
         />
       </label>
@@ -131,7 +116,7 @@ export default function TestDb({ onSuccess }: Props) {
           status === 'success' ? 'bg-green-600' : 'bg-primary hover:opacity-90 text-primary-foreground'
         } w-full py-2.5 rounded-lg text-sm font-medium transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed`}
       >
-        {status === 'saving' ? 'Uploading…' : status === 'success' ? 'Added! Upload another' : 'Upload frame to MongoDB'}
+        {status === 'saving' ? 'Uploading…' : status === 'success' ? 'Added! Upload another' : 'Upload asset'}
       </button>
     </form>
   );

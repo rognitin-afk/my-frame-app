@@ -7,16 +7,29 @@ import { Label } from "../components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Slider } from "../components/ui/slider";
 import { Separator } from "../components/ui/separator";
-import { Upload, Sparkles, ChevronRight, LayoutTemplate } from "lucide-react";
+import { Upload, Sparkles, ChevronRight, LayoutTemplate, ImageIcon, Images, Trash2 } from "lucide-react";
 import { compressToMax3MB } from "@/lib/compress-image";
 import "./globals.css";
 
-// This Interface fixes the "Unexpected any" error by defining what a Frame is
 interface Frame {
   _id: string;
   name: string;
   src: string;
   category?: string;
+}
+
+interface Asset {
+  _id: string;
+  name: string;
+  src: string;
+}
+
+const LOCAL_IMAGES_KEY = "congress-canvas-your-images";
+
+interface LocalImage {
+  id: string;
+  src: string;
+  name?: string;
 }
 
 export default function Home() {
@@ -27,15 +40,19 @@ export default function Home() {
 
   // --- STATES ---
   const [selectedFrame, setSelectedFrame] = useState<string | null>(null);
-  const [dbFrames, setDbFrames] = useState<Frame[]>([]); // Using the Frame interface here
+  const [dbFrames, setDbFrames] = useState<Frame[]>([]);
+  const [dbAssets, setDbAssets] = useState<Asset[]>([]);
   const [userName, setUserName] = useState("");
   const [userPosition, setUserPosition] = useState("");
   const [isRemoving, setIsRemoving] = useState(false);
   const [photoZoom, setPhotoZoom] = useState(100);
   const [rightFramesOpen, setRightFramesOpen] = useState(true);
+  const [rightPanelTab, setRightPanelTab] = useState<"templates" | "assets" | "images">("templates");
+  const [localImages, setLocalImages] = useState<LocalImage[]>([]);
   const [canvasSize, setCanvasSize] = useState({ width: 500, height: 500 });
   const [frameLoading, setFrameLoading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [canDeleteSelected, setCanDeleteSelected] = useState(false);
   const bgRemovePreloaded = useRef(false);
 
   // --- PRELOAD BACKGROUND-REMOVAL MODEL IN BACKGROUND (does not block UI) ---
@@ -67,7 +84,7 @@ export default function Home() {
     };
   }, []);
 
-  // --- FETCH DATA FROM MONGODB --- (only set initial frame on first load; never overwrite user's selection)
+  // --- FETCH DATA FROM MONGODB ---
   useEffect(() => {
     async function loadFrames() {
       try {
@@ -86,6 +103,68 @@ export default function Home() {
     loadFrames();
   }, []);
 
+  useEffect(() => {
+    async function loadAssets() {
+      try {
+        const res = await fetch("/api/asset");
+        const data = await res.json();
+        setDbAssets(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error("Failed to fetch assets:", error);
+      }
+    }
+    loadAssets();
+  }, []);
+
+  // Load "Your images" from localStorage (client-only)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_IMAGES_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setLocalImages(
+            parsed.filter(
+              (x): x is LocalImage =>
+                x && typeof x.id === "string" && typeof x.src === "string"
+            )
+          );
+        }
+      }
+    } catch {
+      // ignore invalid data
+    }
+  }, []);
+
+  const addLocalImage = (item: Omit<LocalImage, "id"> & { id?: string }) => {
+    const entry: LocalImage = {
+      id: item.id ?? crypto.randomUUID(),
+      src: item.src,
+      name: item.name,
+    };
+    setLocalImages((prev) => {
+      const next = [entry, ...prev];
+      try {
+        localStorage.setItem(LOCAL_IMAGES_KEY, JSON.stringify(next));
+      } catch {
+        // quota or other
+      }
+      return next;
+    });
+  };
+
+  const removeLocalImage = (id: string) => {
+    setLocalImages((prev) => {
+      const next = prev.filter((img) => img.id !== id);
+      try {
+        localStorage.setItem(LOCAL_IMAGES_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
   // --- SIDEBAR LOGIC ---
   const framesList = Array.isArray(dbFrames) ? dbFrames : [];
 
@@ -100,6 +179,53 @@ export default function Home() {
     }
     setPhotoZoom(100);
     setSelectedFrame(frameSrc);
+  };
+
+  const handleAddAsset = (assetSrc: string) => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    fabric.Image.fromURL(assetSrc, { crossOrigin: "anonymous" }).then((img) => {
+      const canvasW = canvas.getWidth();
+      const canvasH = canvas.getHeight();
+      const w = (img.get("width") as number) ?? 1;
+      const h = (img.get("height") as number) ?? 1;
+      const scaleToFit = Math.min(1, (canvasW * 0.4) / w, (canvasH * 0.4) / h);
+      img.set({
+        scaleX: scaleToFit,
+        scaleY: scaleToFit,
+      });
+      canvas.add(img);
+      canvas.centerObject(img);
+      canvas.bringObjectToFront(img);
+      canvas.getObjects().forEach((obj) => {
+        if (obj.get("data")?.id?.includes("text"))
+          canvas.bringObjectToFront(obj);
+      });
+      canvas.setActiveObject(img);
+      canvas.renderAll();
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    // Support both single selection (getActiveObject) and multi (getActiveObjects) like canva-clone
+    const multi = canvas.getActiveObjects();
+    const single = canvas.getActiveObject();
+    const toProcess =
+      multi && multi.length > 0 ? multi : single ? [single] : [];
+    let removed = false;
+    toProcess.forEach((obj) => {
+      if (obj.type === "Image" || obj.type === "image" || obj instanceof fabric.FabricImage) {
+        canvas.remove(obj);
+        removed = true;
+      }
+    });
+    if (removed) {
+      canvas.discardActiveObject();
+      canvas.renderAll();
+      setCanDeleteSelected(false);
+    }
   };
 
   // 1. Initialize Canvas
@@ -146,7 +272,53 @@ export default function Home() {
     canvas.add(nameText, posText);
     canvas.renderAll();
 
+    const updateCanDelete = () => {
+      const activeObjects = canvas.getActiveObjects();
+      const hasImage = activeObjects?.some(
+        (obj) =>
+          obj.type === "Image" ||
+          obj.type === "image" ||
+          obj instanceof fabric.FabricImage
+      );
+      setCanDeleteSelected(!!hasImage);
+    };
+    const clearCanDelete = () => setCanDeleteSelected(false);
+    canvas.on("selection:created", updateCanDelete);
+    canvas.on("selection:updated", updateCanDelete);
+    canvas.on("selection:cleared", clearCanDelete);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const target = e.target as Node;
+      if (target && typeof (target as HTMLElement).closest === "function") {
+        const el = target as HTMLElement;
+        if (el.closest("input, textarea, [contenteditable=true]")) return;
+      }
+      const canvas = fabricRef.current;
+      if (!canvas) return;
+      const toProcess = canvas.getActiveObjects();
+      if (!toProcess?.length) return;
+      e.preventDefault();
+      let removed = false;
+      toProcess.forEach((obj) => {
+        if (obj.type === "Image" || obj.type === "image" || obj instanceof fabric.FabricImage) {
+          canvas.remove(obj);
+          removed = true;
+        }
+      });
+      if (removed) {
+        canvas.discardActiveObject();
+        canvas.renderAll();
+        setCanDeleteSelected(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown, true);
+
     return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+      canvas.off("selection:created", updateCanDelete);
+      canvas.off("selection:updated", updateCanDelete);
+      canvas.off("selection:cleared", clearCanDelete);
       canvas.dispose();
       isInitialized.current = false;
     };
@@ -334,6 +506,8 @@ export default function Home() {
         alert("Invalid response");
         return;
       }
+
+      addLocalImage({ src: url, name: "Photo (no BG)" });
 
       fabric.Image.fromURL(url, { crossOrigin: "anonymous" }).then((img) => {
         img.set({
@@ -528,8 +702,8 @@ export default function Home() {
   return (
     <main className="flex min-h-screen w-full flex-col bg-muted/30 md:flex-row">
       {/* LEFT SIDEBAR */}
-      <aside className="w-full border-r bg-card p-6 shadow-sm md:w-[380px] overflow-y-auto max-h-screen" suppressHydrationWarning>
-        <div className="mb-4 flex items-center gap-2">
+      <aside className="flex h-screen w-full flex-col border-r bg-card shadow-sm md:w-[300px]" suppressHydrationWarning>
+        <div className="shrink-0 border-b bg-card px-3 py-2 flex items-center gap-2">
           <img
             src="/favicon.png"
             alt=""
@@ -539,91 +713,100 @@ export default function Home() {
             Congress Canvas(CC)
           </h1>
         </div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+          <Card className="mb-2 gap-1 py-2 px-3">
+            <CardHeader className="p-0 pb-1">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                1. Person details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 p-0 pt-0">
+              <div className="space-y-1">
+                <Label htmlFor="name">Full name</Label>
+                <Input
+                  id="name"
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  placeholder="Full Name"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="position">Position</Label>
+                <Input
+                  id="position"
+                  value={userPosition}
+                  onChange={(e) => setUserPosition(e.target.value)}
+                  placeholder="Position"
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-        {/* 1. Text Details */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              1. Person details
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="name">Full name</Label>
-              <Input
-                id="name"
-                value={userName}
-                onChange={(e) => setUserName(e.target.value)}
-                placeholder="Full Name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="position">Position</Label>
-              <Input
-                id="position"
-                value={userPosition}
-                onChange={(e) => setUserPosition(e.target.value)}
-                placeholder="Position"
-              />
-            </div>
-          </CardContent>
-        </Card>
+          <Separator className="my-2" />
 
-        <Separator className="mb-6" />
+          <Card className="mb-2 gap-1 py-2 px-3">
+            <CardHeader className="p-0 pb-1">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                2. Photo & AI
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 p-0 pt-0">
+              <Label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
+                <Upload className="size-4" />
+                {photoUploading ? "Uploading…" : "Upload photo"}
+                <input
+                  type="file"
+                  className="sr-only"
+                  onChange={handleImageUpload}
+                  accept="image/*"
+                  disabled={photoUploading}
+                />
+              </Label>
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={handleRemoveBackground}
+                disabled={isRemoving}
+              >
+                <Sparkles className="size-4" />
+                {isRemoving ? "Processing…" : "Remove background"}
+              </Button>
+            </CardContent>
+          </Card>
 
-        {/* 2. Upload & AI */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              2. Photo & AI
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
-              <Upload className="size-4" />
-              {photoUploading ? "Uploading…" : "Upload photo"}
-              <input
-                type="file"
-                className="sr-only"
-                onChange={handleImageUpload}
-                accept="image/*"
-                disabled={photoUploading}
-              />
-            </Label>
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              onClick={handleRemoveBackground}
-              disabled={isRemoving}
-            >
-              <Sparkles className="size-4" />
-              {isRemoving ? "Processing…" : "Remove background"}
-            </Button>
-          </CardContent>
-        </Card>
+          <Separator className="my-2" />
 
-        <Separator className="mb-6" />
-
-        {/* 3. Edit Photo */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              3. Edit photo
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <Label>Photo zoom — {Math.round(photoZoom)}%</Label>
-              <Slider
-                min={10}
-                max={200}
-                value={[photoZoom]}
-                onValueChange={(v) => handleZoom(v[0] ?? 100)}
-                className="w-full"
-              />
-            </div>
-          </CardContent>
-        </Card>
+          <Card className="mb-2 gap-1 py-2 px-3">
+            <CardHeader className="p-0 pb-1">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                3. Edit photo
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 pt-0">
+              <div className="space-y-2">
+                <Label>Photo zoom — {Math.round(photoZoom)}%</Label>
+                <Slider
+                  min={10}
+                  max={200}
+                  value={[photoZoom]}
+                  onValueChange={(v) => handleZoom(v[0] ?? 100)}
+                  className="w-full"
+                />
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={handleDeleteSelected}
+                >
+                  <Trash2 className="size-4" />
+                  Delete selected image
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Select an image on the canvas, then click above.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </aside>
 
       {/* CENTER: Canvas + Download */}
@@ -686,17 +869,55 @@ export default function Home() {
           rightFramesOpen ? "w-[280px]" : "w-12"
         }`}
       >
-        <div className="flex items-center justify-between border-b p-2 min-h-11 shrink-0">
+        <div className="flex items-center gap-1 border-b p-2 min-h-0 shrink-0">
           {rightFramesOpen ? (
             <>
-              <span className="text-xs font-medium text-muted-foreground truncate px-1">
-                Templates ({dbFrames.length})
-              </span>
+              <div className="flex gap-1 flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setRightPanelTab("templates")}
+                  title={`Frames (${dbFrames.length})`}
+                  className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg border-2 py-2 px-1.5 transition-colors min-w-0 ${
+                    rightPanelTab === "templates"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  <LayoutTemplate className="size-5 shrink-0" />
+                  <span className="text-[10px] font-medium truncate w-full text-center">Frames</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRightPanelTab("assets")}
+                  title={`Assets (${dbAssets.length})`}
+                  className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg border-2 py-2 px-1.5 transition-colors min-w-0 ${
+                    rightPanelTab === "assets"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  <ImageIcon className="size-5 shrink-0" />
+                  <span className="text-[10px] font-medium truncate w-full text-center">Assets</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRightPanelTab("images")}
+                  title={`Your images (${localImages.length})`}
+                  className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg border-2 py-2 px-1.5 transition-colors min-w-0 ${
+                    rightPanelTab === "images"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  <Images className="size-5 shrink-0" />
+                  <span className="text-[10px] font-medium truncate w-full text-center">Your images</span>
+                </button>
+              </div>
               <Button
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => setRightFramesOpen(false)}
-                aria-label="Collapse templates"
+                aria-label="Collapse panel"
                 suppressHydrationWarning
               >
                 <ChevronRight className="size-4" />
@@ -708,7 +929,7 @@ export default function Home() {
               size="icon"
               className="w-full"
               onClick={() => setRightFramesOpen(true)}
-              aria-label="Expand templates"
+              aria-label="Expand panel"
               suppressHydrationWarning
             >
               <LayoutTemplate className="size-5" />
@@ -716,26 +937,100 @@ export default function Home() {
           )}
         </div>
         {rightFramesOpen && (
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-2">
-            <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-y-auto">
-              {framesList.map((frame) => (
-                <button
-                  key={frame._id}
-                  type="button"
-                  onClick={() => handleSelectFrame(frame.src)}
-                  className={`relative w-full rounded-md border-2 transition-colors overflow-hidden flex-shrink-0 max-h-[50vh] ${
-                    selectedFrame === frame.src
-                      ? "border-primary bg-primary/10"
-                      : "border-border hover:border-primary/50 bg-muted/30"
-                  }`}
-                >
-                  <img
-                    src={frame.src}
-                    alt={frame.name}
-                    className="w-full h-auto object-contain block"
-                  />
-                </button>
-              ))}
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="px-3 pt-2 pb-1 shrink-0">
+              <h3 className="text-sm font-semibold text-foreground">
+                {rightPanelTab === "templates" && "Frames"}
+                {rightPanelTab === "assets" && "Assets"}
+                {rightPanelTab === "images" && "Your images"}
+              </h3>
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col overflow-y-auto p-2 pt-0">
+              {rightPanelTab === "templates" && (
+                <div className="flex flex-col gap-2">
+                  {framesList.map((frame) => (
+                    <button
+                      key={frame._id}
+                      type="button"
+                      onClick={() => handleSelectFrame(frame.src)}
+                      className={`relative w-full rounded-md border-2 transition-colors overflow-hidden shrink-0 max-h-[50vh] ${
+                        selectedFrame === frame.src
+                          ? "border-primary bg-primary/10"
+                          : "border-border hover:border-primary/50 bg-muted/30"
+                      }`}
+                    >
+                      <img
+                        src={frame.src}
+                        alt={frame.name}
+                        className="w-full h-auto object-contain block"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {rightPanelTab === "assets" && (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {dbAssets.map((asset) => (
+                    <button
+                      key={asset._id}
+                      type="button"
+                      onClick={() => handleAddAsset(asset.src)}
+                      className="aspect-square rounded-md border-2 border-border hover:border-primary/50 bg-muted/30 overflow-hidden shrink-0 transition-colors"
+                      title={asset.name}
+                    >
+                      <img
+                        src={asset.src}
+                        alt={asset.name}
+                        className="w-full h-full object-contain block"
+                      />
+                    </button>
+                  ))}
+                  {dbAssets.length === 0 && (
+                    <p className="col-span-2 text-xs text-muted-foreground py-4 text-center">
+                      No assets yet
+                    </p>
+                  )}
+                </div>
+              )}
+              {rightPanelTab === "images" && (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {localImages.map((img) => (
+                    <div
+                      key={img.id}
+                      className="relative group aspect-square rounded-md border-2 border-border hover:border-primary/50 bg-muted/30 overflow-hidden shrink-0"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleAddAsset(img.src)}
+                        className="absolute inset-0 w-full h-full block"
+                        title={img.name ?? "Add to canvas"}
+                      >
+                        <img
+                          src={img.src}
+                          alt={img.name ?? "Your image"}
+                          className="w-full h-full object-contain block"
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeLocalImage(img.id);
+                        }}
+                        className="absolute top-0.5 right-0.5 p-1 rounded bg-red-500/90 text-white hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="Remove from list"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {localImages.length === 0 && (
+                    <p className="col-span-2 text-xs text-muted-foreground py-4 text-center">
+                      No images yet. Remove a photo background to add one here.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
