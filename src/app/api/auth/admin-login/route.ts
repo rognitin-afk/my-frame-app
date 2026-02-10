@@ -4,6 +4,7 @@ import {
   constantTimeEqual,
   getAdminSessionSecret,
 } from "@/lib/auth-admin";
+import { getAdminLoginRateLimiter } from "@/lib/ratelimit";
 
 function getAdminPassword(): string {
   const raw = (process.env.ADMIN_PASSWORD || "").trim();
@@ -13,7 +14,35 @@ function getAdminPassword(): string {
   return raw;
 }
 
+function getClientIp(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  const realIp = request.headers.get("x-real-ip");
+  if (forwarded) return forwarded.split(",")[0]?.trim() ?? "unknown";
+  if (realIp) return realIp;
+  return "unknown";
+}
+
 export async function POST(request: Request) {
+  // Rate limit: 30 per 15 min per IP (runs in Node so env is available)
+  const limiter = getAdminLoginRateLimiter();
+  if (limiter) {
+    const ip = getClientIp(request);
+    const { success, limit, remaining, reset } = await limiter.limit(ip);
+    if (!success) {
+      return NextResponse.json(
+        { error: "Too many login attempts. Please try again later." },
+        {
+          status: 429,
+          headers: {
+            "X-RateLimit-Limit": String(limit),
+            "X-RateLimit-Remaining": String(remaining),
+            "X-RateLimit-Reset": String(reset),
+          },
+        }
+      );
+    }
+  }
+
   const secret = getAdminSessionSecret();
   if (!secret) {
     return NextResponse.json(
