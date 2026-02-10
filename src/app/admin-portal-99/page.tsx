@@ -77,6 +77,20 @@ export default function AdminPortal() {
     }
   };
 
+  // Redirect to login if not authenticated (APIs return 401)
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/frame', { credentials: 'same-origin' })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.status === 401) router.replace('/admin-portal-99/login');
+      })
+      .catch(() => {
+        if (!cancelled) router.replace('/admin-portal-99/login');
+      });
+    return () => { cancelled = true; };
+  }, [router]);
+
   useEffect(() => {
     loadFrames();
     loadStats();
