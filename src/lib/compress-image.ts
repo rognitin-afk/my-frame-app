@@ -1,19 +1,26 @@
 const MAX_UPLOAD_MB = 3;
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
+function getBlobName(input: File | Blob, fallbackFilename: string): string {
+  if (input instanceof File && input.name) return input.name;
+  return fallbackFilename;
+}
+
 /**
  * Compress image in the browser to at most 3 MB (resize + JPEG quality).
- * Used by admin frame upload and main page photo upload.
+ * Used by admin frame upload, main page photo upload, and post–background-removal upload.
  */
 export async function compressToMax3MB(
-  file: File
+  input: File | Blob,
+  fallbackFilename: string = "photo.png"
 ): Promise<{ blob: Blob; filename: string }> {
-  if (file.size <= MAX_UPLOAD_BYTES) {
-    return { blob: file, filename: file.name };
+  const name = getBlobName(input, fallbackFilename);
+  if (input.size <= MAX_UPLOAD_BYTES) {
+    return { blob: input, filename: name };
   }
   return new Promise((resolve) => {
     const img = new Image();
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(input);
     img.onload = () => {
       URL.revokeObjectURL(url);
       const canvas = document.createElement("canvas");
@@ -32,7 +39,7 @@ export async function compressToMax3MB(
       canvas.height = height;
       const ctx = canvas.getContext("2d");
       if (!ctx) {
-        resolve({ blob: file, filename: file.name });
+        resolve({ blob: input, filename: name });
         return;
       }
       ctx.drawImage(img, 0, 0, width, height);
@@ -41,11 +48,11 @@ export async function compressToMax3MB(
         canvas.toBlob(
           (blob) => {
             if (!blob) {
-              resolve({ blob: file, filename: file.name });
+              resolve({ blob: input, filename: name });
               return;
             }
             if (blob.size <= MAX_UPLOAD_BYTES || q <= 0.2) {
-              const base = file.name.replace(/\.[^.]+$/, "");
+              const base = name.replace(/\.[^.]+$/, "");
               resolve({ blob, filename: `${base}.jpg` });
               return;
             }
@@ -59,7 +66,7 @@ export async function compressToMax3MB(
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      resolve({ blob: file, filename: file.name });
+      resolve({ blob: input, filename: name });
     };
     img.src = url;
   });

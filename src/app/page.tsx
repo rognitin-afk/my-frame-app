@@ -318,8 +318,9 @@ export default function Home() {
         output: { format: "image/png", quality: 1 },
       });
 
+      const { blob: uploadBlob, filename } = await compressToMax3MB(blob, "photo.png");
       const formData = new FormData();
-      formData.append("file", blob, "photo.png");
+      formData.append("file", uploadBlob, filename);
       const res = await fetch("/api/upload-photo", { method: "POST", body: formData });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
