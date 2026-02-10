@@ -536,7 +536,7 @@ export default function Home() {
             className="size-8 shrink-0 object-contain"
           />
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Congress Canvas
+            Congress Canvas(CC)
           </h1>
         </div>
 
