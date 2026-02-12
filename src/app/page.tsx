@@ -1,13 +1,31 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as fabric from "fabric";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
 import { Separator } from "../components/ui/separator";
-import { Upload, Sparkles, ChevronRight, LayoutTemplate, ImageIcon, Images, Trash2 } from "lucide-react";
-import { compressToMax3MB } from "@/lib/compress-image";
+import {
+  Upload,
+  Sparkles,
+  ChevronRight,
+  LayoutTemplate,
+  ImageIcon,
+  Images,
+  Trash2,
+  Layers,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUp,
+  ChevronsDown,
+  Type,
+} from "lucide-react";
 import "./globals.css";
 
 interface Frame {
@@ -31,8 +49,15 @@ interface LocalImage {
   name?: string;
 }
 
+interface AudioItem {
+  _id: string;
+  name: string;
+  src: string;
+}
+
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
   const fabricRef = useRef<fabric.Canvas | null>(null);
   const isInitialized = useRef(false);
   const hasSetInitialFrame = useRef(false);
@@ -48,13 +73,29 @@ export default function Home() {
   const [isRemoving, setIsRemoving] = useState(false);
   const userPhotoRef = useRef<fabric.FabricImage | null>(null);
   const [rightFramesOpen, setRightFramesOpen] = useState(true);
-  const [rightPanelTab, setRightPanelTab] = useState<"templates" | "assets" | "images">("templates");
+  const [rightPanelTab, setRightPanelTab] = useState<
+    "templates" | "assets" | "images" | "layers"
+  >("templates");
   const [localImages, setLocalImages] = useState<LocalImage[]>([]);
   const [canvasSize, setCanvasSize] = useState({ width: 500, height: 500 });
   const [frameLoading, setFrameLoading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [canDeleteSelected, setCanDeleteSelected] = useState(false);
   const bgRemovePreloaded = useRef(false);
+  const [audioList, setAudioList] = useState<AudioItem[]>([]);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [layers, setLayers] = useState<
+    {
+      layerId: string;
+      type: string;
+      label: string;
+      preview?: string;
+      isText: boolean;
+    }[]
+  >([]);
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
+  const layerIdRef = useRef(0);
 
   // --- PRELOAD BACKGROUND-REMOVAL MODEL IN BACKGROUND (does not block UI) ---
   useEffect(() => {
@@ -117,6 +158,15 @@ export default function Home() {
     loadAssets();
   }, []);
 
+  useEffect(() => {
+    setAudioLoading(true);
+    fetch("/api/audio")
+      .then((res) => res.json())
+      .then((data) => setAudioList(Array.isArray(data) ? data : []))
+      .catch(() => setAudioList([]))
+      .finally(() => setAudioLoading(false));
+  }, []);
+
   // Load "Your images" from localStorage (client-only)
   useEffect(() => {
     try {
@@ -127,8 +177,8 @@ export default function Home() {
           setLocalImages(
             parsed.filter(
               (x): x is LocalImage =>
-                x && typeof x.id === "string" && typeof x.src === "string"
-            )
+                x && typeof x.id === "string" && typeof x.src === "string",
+            ),
           );
         }
       }
@@ -181,30 +231,76 @@ export default function Home() {
     setSelectedFrame(frameSrc);
   };
 
+  const addImageToCanvas = useCallback(
+    (assetSrc: string, dropX?: number, dropY?: number) => {
+      const canvas = fabricRef.current;
+      if (!canvas) return;
+      fabric.Image.fromURL(assetSrc, { crossOrigin: "anonymous" }).then(
+        (img) => {
+          const canvasW = canvas.getWidth();
+          const canvasH = canvas.getHeight();
+          const w = (img.get("width") as number) ?? 1;
+          const h = (img.get("height") as number) ?? 1;
+          const scaleToFit = Math.min(
+            1,
+            (canvasW * 0.4) / w,
+            (canvasH * 0.4) / h,
+          );
+          img.set({
+            scaleX: scaleToFit,
+            scaleY: scaleToFit,
+          });
+          canvas.add(img);
+          if (typeof dropX === "number" && typeof dropY === "number") {
+            img.set({
+              left: dropX,
+              top: dropY,
+              originX: "center",
+              originY: "center",
+            });
+          } else {
+            canvas.centerObject(img);
+          }
+          canvas.bringObjectToFront(img);
+          canvas.getObjects().forEach((obj) => {
+            if (obj.get("data")?.id?.includes("text"))
+              canvas.bringObjectToFront(obj);
+          });
+          canvas.setActiveObject(img);
+          canvas.renderAll();
+          updateLayers();
+        },
+      );
+    },
+    [],
+  );
+
   const handleAddAsset = (assetSrc: string) => {
-    const canvas = fabricRef.current;
-    if (!canvas) return;
-    fabric.Image.fromURL(assetSrc, { crossOrigin: "anonymous" }).then((img) => {
-      const canvasW = canvas.getWidth();
-      const canvasH = canvas.getHeight();
-      const w = (img.get("width") as number) ?? 1;
-      const h = (img.get("height") as number) ?? 1;
-      const scaleToFit = Math.min(1, (canvasW * 0.4) / w, (canvasH * 0.4) / h);
-      img.set({
-        scaleX: scaleToFit,
-        scaleY: scaleToFit,
-      });
-      canvas.add(img);
-      canvas.centerObject(img);
-      canvas.bringObjectToFront(img);
-      canvas.getObjects().forEach((obj) => {
-        if (obj.get("data")?.id?.includes("text"))
-          canvas.bringObjectToFront(obj);
-      });
-      canvas.setActiveObject(img);
-      canvas.renderAll();
-    });
+    addImageToCanvas(assetSrc);
   };
+
+  const handleCanvasDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const url = e.dataTransfer.getData("application/x-canvas-image");
+      if (!url) return;
+      const container = canvasContainerRef.current;
+      if (!container) {
+        addImageToCanvas(url);
+        return;
+      }
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      addImageToCanvas(url, x, y);
+    },
+    [addImageToCanvas],
+  );
+
+  const handleCanvasDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
 
   const handleDeleteSelected = () => {
     const canvas = fabricRef.current;
@@ -216,7 +312,11 @@ export default function Home() {
       multi && multi.length > 0 ? multi : single ? [single] : [];
     let removed = false;
     toProcess.forEach((obj) => {
-      if (obj.type === "Image" || obj.type === "image" || obj instanceof fabric.FabricImage) {
+      if (
+        obj.type === "Image" ||
+        obj.type === "image" ||
+        obj instanceof fabric.FabricImage
+      ) {
         if (obj.get("data")?.type === "user-photo") userPhotoRef.current = null;
         canvas.remove(obj);
         removed = true;
@@ -228,6 +328,133 @@ export default function Home() {
       setCanDeleteSelected(false);
     }
   };
+
+  const getLayerLabel = (obj: fabric.FabricObject): string => {
+    const data = obj.get("data") as Record<string, unknown> | undefined;
+    if (data?.id === "name-text") return "Name text";
+    if (data?.id === "pos-text") return "Position text";
+    if (data?.type === "user-photo") return "Photo";
+    const t = obj.type ?? "object";
+    return t === "i-text" || t === "textbox"
+      ? "Text"
+      : t === "image" || t === "Image"
+        ? "Image"
+        : String(t);
+  };
+
+  const ensureLayerId = (obj: fabric.FabricObject): string => {
+    const data = (obj.get("data") as Record<string, unknown>) || {};
+    const existing = data.layerId as string | undefined;
+    if (existing) return existing;
+    layerIdRef.current += 1;
+    const id = `layer-${Date.now()}-${layerIdRef.current}`;
+    obj.set("data", { ...data, layerId: id });
+    return id;
+  };
+
+  const updateLayers = useCallback(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    const objects = canvas.getObjects();
+    const list = objects.map((obj) => {
+      const layerId = ensureLayerId(obj);
+      const type = (obj.type as string) ?? "object";
+      const label = getLayerLabel(obj);
+      const isText =
+        type === "i-text" ||
+        type === "textbox" ||
+        (obj.get("data") as Record<string, unknown>)?.id === "name-text" ||
+        (obj.get("data") as Record<string, unknown>)?.id === "pos-text";
+      let preview: string | undefined;
+      if (!isText) {
+        try {
+          if (
+            typeof (
+              obj as fabric.FabricObject & {
+                toDataURL?: (opts?: {
+                  format?: string;
+                  multiplier?: number;
+                }) => string;
+              }
+            ).toDataURL === "function"
+          ) {
+            preview = (
+              obj as fabric.FabricObject & {
+                toDataURL: (opts?: {
+                  format?: string;
+                  multiplier?: number;
+                }) => string;
+              }
+            ).toDataURL({
+              format: "png",
+              multiplier: 0.25,
+            });
+          }
+        } catch {
+          // skip preview if export fails (e.g. CORS)
+        }
+      }
+      return { layerId, type, label, preview, isText };
+    });
+    setLayers([...list].reverse());
+  }, []);
+
+  const moveLayer = useCallback(
+    (direction: "up" | "down" | "front" | "back") => {
+      const canvas = fabricRef.current;
+      if (!canvas || !selectedLayerId) return;
+      const obj = canvas
+        .getObjects()
+        .find((o) => ensureLayerId(o) === selectedLayerId);
+      if (!obj) return;
+      if (direction === "up") canvas.bringObjectForward(obj);
+      else if (direction === "down") canvas.sendObjectBackwards(obj);
+      else if (direction === "front") canvas.bringObjectToFront(obj);
+      else if (direction === "back") canvas.sendObjectToBack(obj);
+      canvas.renderAll();
+      updateLayers();
+    },
+    [selectedLayerId, updateLayers],
+  );
+
+  const selectLayerById = useCallback((layerId: string) => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    const obj = canvas
+      .getObjects()
+      .find(
+        (o) => (o.get("data") as Record<string, unknown>)?.layerId === layerId,
+      );
+    if (obj) {
+      canvas.setActiveObject(obj);
+      canvas.renderAll();
+      setSelectedLayerId(layerId);
+    }
+  }, []);
+
+  const moveLayerToIndex = useCallback(
+    (draggedLayerId: string, toListIndex: number) => {
+      const canvas = fabricRef.current;
+      if (!canvas) return;
+      const objects = canvas.getObjects();
+      const fromCanvasIndex = objects.findIndex(
+        (o) =>
+          (o.get("data") as Record<string, unknown>)?.layerId ===
+          draggedLayerId,
+      );
+      if (fromCanvasIndex < 0) return;
+      const obj = objects[fromCanvasIndex];
+      const n = objects.length;
+      const toCanvasIndex = n - 1 - toListIndex;
+      if (fromCanvasIndex === toCanvasIndex) return;
+      canvas.remove(obj);
+      const insertIndex = toCanvasIndex;
+      canvas.insertAt(insertIndex, obj);
+      canvas.renderAll();
+      updateLayers();
+    },
+    [updateLayers],
+  );
 
   // 1. Initialize Canvas
   useEffect(() => {
@@ -273,13 +500,35 @@ export default function Home() {
     canvas.add(nameText, posText);
     canvas.renderAll();
 
+    const onSelectionChange = () => {
+      const active = canvas.getActiveObject();
+      if (active) {
+        const data = active.get("data") as Record<string, unknown> | undefined;
+        setSelectedLayerId((data?.layerId as string) ?? null);
+      } else {
+        setSelectedLayerId(null);
+      }
+    };
+    const onLayersChange = () => {
+      updateLayers();
+      onSelectionChange();
+    };
+    canvas.on("object:added", onLayersChange);
+    canvas.on("object:removed", onLayersChange);
+    canvas.on("object:modified", onLayersChange);
+    const onSelectionCleared = () => setSelectedLayerId(null);
+    canvas.on("selection:created", onSelectionChange);
+    canvas.on("selection:updated", onSelectionChange);
+    canvas.on("selection:cleared", onSelectionCleared);
+    onLayersChange();
+
     const updateCanDelete = () => {
       const activeObjects = canvas.getActiveObjects();
       const hasImage = activeObjects?.some(
         (obj) =>
           obj.type === "Image" ||
           obj.type === "image" ||
-          obj instanceof fabric.FabricImage
+          obj instanceof fabric.FabricImage,
       );
       setCanDeleteSelected(!!hasImage);
     };
@@ -302,7 +551,11 @@ export default function Home() {
       e.preventDefault();
       let removed = false;
       toProcess.forEach((obj) => {
-        if (obj.type === "Image" || obj.type === "image" || obj instanceof fabric.FabricImage) {
+        if (
+          obj.type === "Image" ||
+          obj.type === "image" ||
+          obj instanceof fabric.FabricImage
+        ) {
           canvas.remove(obj);
           removed = true;
         }
@@ -317,13 +570,19 @@ export default function Home() {
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown, true);
+      canvas.off("object:added", onLayersChange);
+      canvas.off("object:removed", onLayersChange);
+      canvas.off("object:modified", onLayersChange);
+      canvas.off("selection:created", onSelectionChange);
+      canvas.off("selection:updated", onSelectionChange);
+      canvas.off("selection:cleared", onSelectionCleared);
       canvas.off("selection:created", updateCanDelete);
       canvas.off("selection:updated", updateCanDelete);
       canvas.off("selection:cleared", clearCanDelete);
       canvas.dispose();
       isInitialized.current = false;
     };
-  }, []);
+  }, [updateLayers]);
 
   // 2. Text Update
   useEffect(() => {
@@ -493,20 +752,36 @@ export default function Home() {
         output: { format: "image/png", quality: 1 },
       });
 
-      const { blob: uploadBlob, filename } = await compressToMax3MB(blob, "photo.png");
-      const formData = new FormData();
-      formData.append("file", uploadBlob, filename);
-      const res = await fetch("/api/upload-photo", { method: "POST", body: formData });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      const paramsRes = await fetch("/api/upload-photo/upload-params");
+      if (!paramsRes.ok) {
         setIsRemoving(false);
-        alert(data?.error || "Upload failed");
+        alert("Could not get upload params");
         return;
       }
-      const url = data?.url;
-      if (!url || typeof url !== "string") {
+      const params = (await paramsRes.json()) as {
+        cloudName: string;
+        apiKey: string;
+        signature: string;
+        timestamp: number;
+        folder: string;
+        resource_type: string;
+      };
+      const formData = new FormData();
+      formData.append("file", blob, "photo.png");
+      formData.append("api_key", params.apiKey);
+      formData.append("timestamp", String(params.timestamp));
+      formData.append("signature", params.signature);
+      formData.append("folder", params.folder);
+      formData.append("resource_type", params.resource_type);
+      const uploadRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${params.cloudName}/image/upload`,
+        { method: "POST", body: formData },
+      );
+      const uploadData = await uploadRes.json().catch(() => ({}));
+      const url = uploadData.secure_url;
+      if (!uploadRes.ok || !url) {
         setIsRemoving(false);
-        alert("Invalid response");
+        alert(uploadData?.error?.message || "Upload failed");
         return;
       }
 
@@ -543,22 +818,34 @@ export default function Home() {
 
     setPhotoUploading(true);
     try {
-      const { blob, filename } = await compressToMax3MB(file);
-      const formData = new FormData();
-      formData.append("file", blob, filename);
-
-      const res = await fetch("/api/upload-photo", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        alert(data?.error || "Upload failed");
+      const paramsRes = await fetch("/api/upload-photo/upload-params");
+      if (!paramsRes.ok) {
+        alert("Could not get upload params");
         return;
       }
-      const url = data?.url;
-      if (!url || typeof url !== "string") {
-        alert("Invalid response");
+      const params = (await paramsRes.json()) as {
+        cloudName: string;
+        apiKey: string;
+        signature: string;
+        timestamp: number;
+        folder: string;
+        resource_type: string;
+      };
+      const formData = new FormData();
+      formData.append("file", file, file.name);
+      formData.append("api_key", params.apiKey);
+      formData.append("timestamp", String(params.timestamp));
+      formData.append("signature", params.signature);
+      formData.append("folder", params.folder);
+      formData.append("resource_type", params.resource_type);
+      const uploadRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${params.cloudName}/image/upload`,
+        { method: "POST", body: formData },
+      );
+      const uploadData = await uploadRes.json().catch(() => ({}));
+      const url = uploadData.secure_url;
+      if (!uploadRes.ok || !url) {
+        alert(uploadData?.error?.message || "Upload failed");
         return;
       }
 
@@ -630,7 +917,9 @@ export default function Home() {
         r.readAsDataURL(blob);
       });
 
-    const inlineExternalImagesInSvg = async (svgString: string): Promise<string> => {
+    const inlineExternalImagesInSvg = async (
+      svgString: string,
+    ): Promise<string> => {
       const urlRegex = /((?:xlink:)?href=")(https?:\/\/[^"]+)(")/g;
       const matches = [...svgString.matchAll(urlRegex)];
       const uniqueByUrl = new Map<string, string>();
@@ -648,17 +937,24 @@ export default function Home() {
         }
       }
       if (uniqueByUrl.size === 0) return svgString;
-      return svgString.replace(urlRegex, (_, prefix: string, url: string, suffix: string) => {
-        const dataUrl = uniqueByUrl.get(url);
-        return dataUrl ? `${prefix}${dataUrl}${suffix}` : `${prefix}${url}${suffix}`;
-      });
+      return svgString.replace(
+        urlRegex,
+        (_, prefix: string, url: string, suffix: string) => {
+          const dataUrl = uniqueByUrl.get(url);
+          return dataUrl
+            ? `${prefix}${dataUrl}${suffix}`
+            : `${prefix}${url}${suffix}`;
+        },
+      );
     };
 
     try {
       let svgString = canvas.toSVG();
       svgString = await inlineExternalImagesInSvg(svgString);
 
-      const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+      const svgBlob = new Blob([svgString], {
+        type: "image/svg+xml;charset=utf-8",
+      });
       const svgUrl = URL.createObjectURL(svgBlob);
 
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -694,7 +990,10 @@ export default function Home() {
   return (
     <main className="flex min-h-screen w-full flex-col bg-muted/30 md:flex-row">
       {/* LEFT SIDEBAR */}
-      <aside className="flex h-screen w-full flex-col border-r bg-card shadow-sm md:w-[300px]" suppressHydrationWarning>
+      <aside
+        className="flex h-screen w-full flex-col border-r bg-card shadow-sm md:w-[300px]"
+        suppressHydrationWarning
+      >
         <div className="shrink-0 border-b bg-card px-3 py-2 flex items-center gap-2">
           <img
             src="/favicon.png"
@@ -766,8 +1065,14 @@ export default function Home() {
                 2. Photo & AI
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 p-0 pt-0">
-              <Label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
+            <CardContent
+              className="space-y-2 p-0 pt-0"
+              suppressHydrationWarning
+            >
+              <Label
+                className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+                suppressHydrationWarning
+              >
                 <Upload className="size-4" />
                 {photoUploading ? "Uploading…" : "Upload photo"}
                 <input
@@ -783,6 +1088,7 @@ export default function Home() {
                 className="w-full gap-2"
                 onClick={handleRemoveBackground}
                 disabled={isRemoving}
+                suppressHydrationWarning
               >
                 <Sparkles className="size-4" />
                 {isRemoving ? "Processing…" : "Remove background"}
@@ -798,12 +1104,13 @@ export default function Home() {
                 3. Edit photo
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-0 pt-0">
+            <CardContent className="p-0 pt-0" suppressHydrationWarning>
               <div className="space-y-2">
                 <Button
                   variant="outline"
                   className="w-full gap-2"
                   onClick={handleDeleteSelected}
+                  suppressHydrationWarning
                 >
                   <Trash2 className="size-4" />
                   Delete selected image
@@ -812,6 +1119,42 @@ export default function Home() {
                   Select an image on the canvas, then click above.
                 </p>
               </div>
+            </CardContent>
+          </Card>
+
+          <Separator className="my-2" />
+
+          <Card className="mb-2 gap-1 py-2 px-3">
+            <CardHeader className="p-0 pb-1">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                4. Audio
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 pt-0 space-y-2">
+              {audioLoading ? (
+                <p className="text-xs text-muted-foreground">Loading…</p>
+              ) : audioList.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No audio yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {audioList.map((a) => (
+                    <li key={a._id} className="flex flex-col gap-1">
+                      <span
+                        className="text-xs font-medium text-foreground truncate"
+                        title={a.name}
+                      >
+                        {a.name}
+                      </span>
+                      <audio
+                        controls
+                        src={a.src}
+                        className="w-full max-w-full h-8"
+                        preload="metadata"
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -830,12 +1173,15 @@ export default function Home() {
           className="bg-card shadow-lg border rounded-lg relative"
         >
           <div
+            ref={canvasContainerRef}
             style={{
               width: canvasSize.width,
               height: canvasSize.height,
               borderRadius: 4,
             }}
             className="relative overflow-hidden bg-muted/30"
+            onDragOver={handleCanvasDragOver}
+            onDrop={handleCanvasDrop}
           >
             {/* Loading overlay */}
             <div
@@ -892,7 +1238,9 @@ export default function Home() {
                   }`}
                 >
                   <LayoutTemplate className="size-5 shrink-0" />
-                  <span className="text-[10px] font-medium truncate w-full text-center">Frames</span>
+                  <span className="text-[10px] font-medium truncate w-full text-center">
+                    Frames
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -905,7 +1253,9 @@ export default function Home() {
                   }`}
                 >
                   <ImageIcon className="size-5 shrink-0" />
-                  <span className="text-[10px] font-medium truncate w-full text-center">Assets</span>
+                  <span className="text-[10px] font-medium truncate w-full text-center">
+                    Assets
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -918,7 +1268,24 @@ export default function Home() {
                   }`}
                 >
                   <Images className="size-5 shrink-0" />
-                  <span className="text-[10px] font-medium truncate w-full text-center">Your images</span>
+                  <span className="text-[10px] font-medium truncate w-full text-center">
+                    Your images
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRightPanelTab("layers")}
+                  title="Layers"
+                  className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg border-2 py-2 px-1.5 transition-colors min-w-0 ${
+                    rightPanelTab === "layers"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  <Layers className="size-5 shrink-0" />
+                  <span className="text-[10px] font-medium truncate w-full text-center">
+                    Layers
+                  </span>
                 </button>
               </div>
               <Button
@@ -951,6 +1318,7 @@ export default function Home() {
                 {rightPanelTab === "templates" && "Frames"}
                 {rightPanelTab === "assets" && "Assets"}
                 {rightPanelTab === "images" && "Your images"}
+                {rightPanelTab === "layers" && "Layers"}
               </h3>
             </div>
             <div className="flex-1 min-h-0 flex flex-col overflow-y-auto p-2 pt-0">
@@ -982,14 +1350,23 @@ export default function Home() {
                     <button
                       key={asset._id}
                       type="button"
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData(
+                          "application/x-canvas-image",
+                          asset.src,
+                        );
+                        e.dataTransfer.effectAllowed = "copy";
+                      }}
                       onClick={() => handleAddAsset(asset.src)}
                       className="aspect-square rounded-md border-2 border-border hover:border-primary/50 bg-muted/30 overflow-hidden shrink-0 transition-colors"
-                      title={asset.name}
+                      title={`${asset.name}. Drag to canvas to drop at position.`}
                     >
                       <img
                         src={asset.src}
                         alt={asset.name}
                         className="w-full h-full object-contain block"
+                        draggable={false}
                       />
                     </button>
                   ))}
@@ -1009,14 +1386,23 @@ export default function Home() {
                     >
                       <button
                         type="button"
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData(
+                            "application/x-canvas-image",
+                            img.src,
+                          );
+                          e.dataTransfer.effectAllowed = "copy";
+                        }}
                         onClick={() => handleAddAsset(img.src)}
                         className="absolute inset-0 w-full h-full block"
-                        title={img.name ?? "Add to canvas"}
+                        title={`${img.name ?? "Your image"}. Drag to canvas to drop at position.`}
                       >
                         <img
                           src={img.src}
                           alt={img.name ?? "Your image"}
                           className="w-full h-full object-contain block"
+                          draggable={false}
                         />
                       </button>
                       <button
@@ -1035,6 +1421,165 @@ export default function Home() {
                   {localImages.length === 0 && (
                     <p className="col-span-2 text-xs text-muted-foreground py-4 text-center">
                       No images yet. Remove a photo background to add one here.
+                    </p>
+                  )}
+                </div>
+              )}
+              {rightPanelTab === "layers" && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap gap-1">
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() => moveLayer("up")}
+                      disabled={
+                        !selectedLayerId ||
+                        layers[0]?.layerId === selectedLayerId
+                      }
+                      title="Move up one"
+                      suppressHydrationWarning
+                    >
+                      <ArrowUp className="size-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() => moveLayer("down")}
+                      disabled={
+                        !selectedLayerId ||
+                        layers[layers.length - 1]?.layerId === selectedLayerId
+                      }
+                      title="Move down one"
+                      suppressHydrationWarning
+                    >
+                      <ArrowDown className="size-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() => moveLayer("front")}
+                      disabled={
+                        !selectedLayerId ||
+                        layers[0]?.layerId === selectedLayerId
+                      }
+                      title="Bring to front"
+                      suppressHydrationWarning
+                    >
+                      <ChevronsUp className="size-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() => moveLayer("back")}
+                      disabled={
+                        !selectedLayerId ||
+                        layers[layers.length - 1]?.layerId === selectedLayerId
+                      }
+                      title="Send to back"
+                      suppressHydrationWarning
+                    >
+                      <ChevronsDown className="size-3" />
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Top of list = front on canvas. Select on canvas or click a
+                    layer.
+                  </p>
+                  <ul className="space-y-1">
+                    {layers.map((layer, listIndex) => (
+                      <li
+                        key={layer.layerId}
+                        draggable
+                        data-layer-id={layer.layerId}
+                        data-layer-index={listIndex}
+                        onDragStart={(e) => {
+                          setDraggingLayerId(layer.layerId);
+                          e.dataTransfer.setData("text/plain", layer.layerId);
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          if (
+                            draggingLayerId &&
+                            e.currentTarget.dataset.layerId !== draggingLayerId
+                          ) {
+                            e.currentTarget.classList.add(
+                              "ring-1",
+                              "ring-primary/50",
+                            );
+                          }
+                        }}
+                        onDragLeave={(e) => {
+                          e.currentTarget.classList.remove(
+                            "ring-1",
+                            "ring-primary/50",
+                          );
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.currentTarget.classList.remove(
+                            "ring-1",
+                            "ring-primary/50",
+                          );
+                          const toLayerId = e.currentTarget.dataset.layerId;
+                          const toIndex = Number(
+                            e.currentTarget.dataset.layerIndex,
+                          );
+                          const draggedId =
+                            e.dataTransfer.getData("text/plain");
+                          if (
+                            draggedId &&
+                            toLayerId != null &&
+                            draggedId !== toLayerId &&
+                            !Number.isNaN(toIndex)
+                          ) {
+                            moveLayerToIndex(draggedId, toIndex);
+                          }
+                          setDraggingLayerId(null);
+                        }}
+                        onDragEnd={() => setDraggingLayerId(null)}
+                        className={`rounded transition-colors ${draggingLayerId === layer.layerId ? "opacity-50" : ""}`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => selectLayerById(layer.layerId)}
+                          className={`w-full flex items-center gap-2 rounded border border-border px-2 py-1.5 text-xs transition-colors ${
+                            selectedLayerId === layer.layerId
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-muted/30 hover:border-primary/40 hover:bg-muted"
+                          }`}
+                          title={`${layer.label}. Drag to reorder.`}
+                        >
+                          <span className="shrink-0 w-8 h-8 rounded border border-border bg-muted/50 overflow-hidden flex items-center justify-center pointer-events-none">
+                            {layer.isText ? (
+                              <Type
+                                className="size-4 text-muted-foreground"
+                                aria-hidden
+                              />
+                            ) : layer.preview ? (
+                              <img
+                                src={layer.preview}
+                                alt=""
+                                className="w-full h-full object-contain"
+                                draggable={false}
+                              />
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground truncate px-0.5">
+                                {layer.label.slice(0, 1)}
+                              </span>
+                            )}
+                          </span>
+                          <span className="truncate flex-1 min-w-0 text-left">
+                            {layer.label}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {layers.length === 0 && (
+                    <p className="text-xs text-muted-foreground py-2">
+                      No layers yet.
                     </p>
                   )}
                 </div>

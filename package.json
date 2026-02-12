@@ -26,7 +26,6 @@
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-transliterate": "^1.1.9",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
