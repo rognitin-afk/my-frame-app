@@ -1,0 +1,81 @@
+---
+description: Project overview and conventions (Congress Canvas) — do not forget
+alwaysApply: false
+---
+# Congress Canvas / my-frame-app
+
+- **Product**: Nepali Congress poster editor with Nepali support (metadata in `layout.tsx`).
+- **Stack**: Next.js 16, React 19, MongoDB (Mongoose), Cloudinary. Package manager: **bun**.
+- **Routes**: `/` (image/poster editor — Fabric.js canvas), `/admin-portal-99` (admin), `/admin-login`. Video editor may exist at `/video` elsewhere.
+
+## Folder structure
+
+- **`src/app/`**: `page.tsx` (home editor), `admin-login/page.tsx`, `admin-portal-99/page.tsx`, `layout.tsx`, `globals.css`. All API routes under `app/api/`.
+- **`src/components/`**: `AudioUpload`, `AssetUpload`, `AssetUploadRemoveBg`, `TestDb` (frame upload), `Sidebar`, `ThemeInjector`, plus `ui/` (button, card, input, label, modal, separator, slider).
+- **`src/lib/`**: `auth-admin.ts`, `mongodb.ts`, `ratelimit.ts` (Upstash), `theme.ts`, `utils.ts` (clsx + tailwind-merge).
+- **`src/models/`**: Mongoose models — **Frame** (name, src, category, downloadCount), **Asset** (name, src), **Audio** (name, src), **Stats** (singleton: downloadCount).
+
+## Main page (`/`)
+
+- **Fabric.js** canvas for poster editing; frames from DB, assets from DB, local/uploaded images (incl. user photo).
+- **Background removal**: `@imgly/background-removal` (preloaded in background); used for user photo and in admin “Remove BG then upload.”
+- **Upload photo**: POST to `/api/upload-photo` (max **5 MB**); no compression; returns `url` for adding to canvas.
+- **Local images**: persisted in localStorage key `congress-canvas-your-images`.
+
+## Admin portal (`/admin-portal-99`)
+
+- **Auth**: Cookie-based (HMAC-signed); proxy protects route; API uses `requireAdminResponse(request)` from `@/lib/auth-admin`. Login: `ADMIN_PASSWORD`; session: `ADMIN_SESSION_SECRET`. Rate limit: Upstash (admin-login).
+- **Tabs**: Frames, Assets, Audio. Upload modals: frame (TestDb), direct asset (AssetUpload), remove-BG asset (AssetUploadRemoveBg), audio (AudioUpload).
+- **Stats**: GET `/api/stats` for download count; GET `/api/stats/download` for CSV export. Frames have `downloadCount`; global stats singleton in **Stats** model.
+
+## Environment variables
+
+- **MongoDB**: `MONGODB_URI`
+- **Cloudinary**: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+- **Admin**: `ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET`
+- **Upstash** (rate limit): `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
+- **Next**: `NODE_ENV` (production check in proxy and auth)
+
+## Next.js 16 Proxy (do not remove)
+
+- **`proxy.ts`** at project root is the **request proxy** (Next.js 16 renamed `middleware.ts` → Proxy).
+- The framework discovers it **by convention**; nothing imports it. Deleting it removes admin route protection.
+- It protects `/admin-portal-99`, redirects to `/admin-login` when the admin cookie is invalid.
+
+## All uploads: client-side direct to Cloudinary (no binary through server)
+
+- **Same flow for audio, frame, asset, and upload-photo**: (1) GET `.../upload-params` → (2) client POSTs file/blob to Cloudinary → (3) for DB-backed types: POST `.../save` with `{ name, src }` (and frame: `category`). Upload-photo has no save; client uses `secure_url` from Cloudinary response.
+- **No** route accepts file binary and uploads from the backend. Do not add fallbacks that send the file through our server.
+- **Cloudinary**: Audio uses `resource_type: "video"`, folder `audio`; image uploads use `resource_type: "image"`, folders `frames`, `assets`, `user-photos`. Signature is over **folder + timestamp only** (not `resource_type`).
+
+## Uploads (audio, assets, frames)
+
+- **Title**: Every upload (audio, direct asset, remove-BG asset, frame) has an editable **Title** field; **default is file name** when a file is selected.
+- **No image compression**: Do not use or re-add `compressToMax3MB` (or similar) for asset, frame, or photo uploads; send the file/blob as-is.
+
+## API layout
+
+- **Audio**: `GET /api/audio`, `DELETE /api/audio` (body: `{ id }` — DB only), `GET /api/audio/upload-params`, `POST /api/audio/save`. No binary upload route.
+- **Frame**: `GET /api/frame`, `DELETE /api/frame` (body: `{ id }`), `GET /api/frame/upload-params`, `POST /api/frame/save` (body: `{ name, src, category }`). No binary upload route.
+- **Asset**: `GET /api/asset`, `DELETE /api/asset` (body: `{ id }`), `GET /api/asset/upload-params`, `POST /api/asset/save` (body: `{ name, src }`). No binary upload route.
+- **Upload-photo**: `GET /api/upload-photo/upload-params` only; client uploads to Cloudinary and uses `secure_url`. Main page user photo and remove-BG flow. No POST that accepts file.
+- **Auth**: `POST /api/auth/admin-login`, `POST /api/auth/admin-logout`.
+- **Stats**: `GET /api/stats` (admin-only), `GET /api/stats/download` (CSV).
+- **All** uploads are client-side direct to Cloudinary; no file binary through our server.
+
+## Cloudinary
+
+- **Audio**: folder `audio`, `resource_type: "video"`; upload URL path `/video/upload`.
+- **Frames**: folder `frames`, `resource_type: "image"`; upload URL path `/image/upload`.
+- **Assets**: folder `assets`, `resource_type: "image"`; upload URL path `/image/upload`.
+- **Upload-photo**: folder `user-photos`, `resource_type: "image"`; upload URL path `/image/upload`. No auth on upload-params (main page is public).
+- Signed params: **folder + timestamp** only (not `resource_type`).
+
+## UI and styling
+
+- **Tailwind**; **shadcn** and **tw-animate-css** in `globals.css`. **Radix** primitives in `components/ui/`. **class-variance-authority** (cva) for button variants. **lucide-react** for icons.
+
+## Cleanup and do not remove
+
+- Do not remove **proxy.ts** as “unused” — it is used by the framework by convention.
+- **react-transliterate** was removed from dependencies (unused). **compress-image.ts** was removed (compression disabled).

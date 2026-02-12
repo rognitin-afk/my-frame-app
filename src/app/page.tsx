@@ -7,7 +7,6 @@ import { Label } from "../components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Separator } from "../components/ui/separator";
 import { Upload, Sparkles, ChevronRight, LayoutTemplate, ImageIcon, Images, Trash2 } from "lucide-react";
-import { compressToMax3MB } from "@/lib/compress-image";
 import "./globals.css";
 
 interface Frame {
@@ -29,6 +28,12 @@ interface LocalImage {
   id: string;
   src: string;
   name?: string;
+}
+
+interface AudioItem {
+  _id: string;
+  name: string;
+  src: string;
 }
 
 export default function Home() {
@@ -55,6 +60,8 @@ export default function Home() {
   const [photoUploading, setPhotoUploading] = useState(false);
   const [canDeleteSelected, setCanDeleteSelected] = useState(false);
   const bgRemovePreloaded = useRef(false);
+  const [audioList, setAudioList] = useState<AudioItem[]>([]);
+  const [audioLoading, setAudioLoading] = useState(false);
 
   // --- PRELOAD BACKGROUND-REMOVAL MODEL IN BACKGROUND (does not block UI) ---
   useEffect(() => {
@@ -115,6 +122,15 @@ export default function Home() {
       }
     }
     loadAssets();
+  }, []);
+
+  useEffect(() => {
+    setAudioLoading(true);
+    fetch("/api/audio")
+      .then((res) => res.json())
+      .then((data) => setAudioList(Array.isArray(data) ? data : []))
+      .catch(() => setAudioList([]))
+      .finally(() => setAudioLoading(false));
   }, []);
 
   // Load "Your images" from localStorage (client-only)
@@ -493,20 +509,26 @@ export default function Home() {
         output: { format: "image/png", quality: 1 },
       });
 
-      const { blob: uploadBlob, filename } = await compressToMax3MB(blob, "photo.png");
-      const formData = new FormData();
-      formData.append("file", uploadBlob, filename);
-      const res = await fetch("/api/upload-photo", { method: "POST", body: formData });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      const paramsRes = await fetch("/api/upload-photo/upload-params");
+      if (!paramsRes.ok) {
         setIsRemoving(false);
-        alert(data?.error || "Upload failed");
+        alert("Could not get upload params");
         return;
       }
-      const url = data?.url;
-      if (!url || typeof url !== "string") {
+      const params = await paramsRes.json() as { cloudName: string; apiKey: string; signature: string; timestamp: number; folder: string; resource_type: string };
+      const formData = new FormData();
+      formData.append("file", blob, "photo.png");
+      formData.append("api_key", params.apiKey);
+      formData.append("timestamp", String(params.timestamp));
+      formData.append("signature", params.signature);
+      formData.append("folder", params.folder);
+      formData.append("resource_type", params.resource_type);
+      const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${params.cloudName}/image/upload`, { method: "POST", body: formData });
+      const uploadData = await uploadRes.json().catch(() => ({}));
+      const url = uploadData.secure_url;
+      if (!uploadRes.ok || !url) {
         setIsRemoving(false);
-        alert("Invalid response");
+        alert(uploadData?.error?.message || "Upload failed");
         return;
       }
 
@@ -543,22 +565,24 @@ export default function Home() {
 
     setPhotoUploading(true);
     try {
-      const { blob, filename } = await compressToMax3MB(file);
-      const formData = new FormData();
-      formData.append("file", blob, filename);
-
-      const res = await fetch("/api/upload-photo", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        alert(data?.error || "Upload failed");
+      const paramsRes = await fetch("/api/upload-photo/upload-params");
+      if (!paramsRes.ok) {
+        alert("Could not get upload params");
         return;
       }
-      const url = data?.url;
-      if (!url || typeof url !== "string") {
-        alert("Invalid response");
+      const params = await paramsRes.json() as { cloudName: string; apiKey: string; signature: string; timestamp: number; folder: string; resource_type: string };
+      const formData = new FormData();
+      formData.append("file", file, file.name);
+      formData.append("api_key", params.apiKey);
+      formData.append("timestamp", String(params.timestamp));
+      formData.append("signature", params.signature);
+      formData.append("folder", params.folder);
+      formData.append("resource_type", params.resource_type);
+      const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${params.cloudName}/image/upload`, { method: "POST", body: formData });
+      const uploadData = await uploadRes.json().catch(() => ({}));
+      const url = uploadData.secure_url;
+      if (!uploadRes.ok || !url) {
+        alert(uploadData?.error?.message || "Upload failed");
         return;
       }
 
@@ -812,6 +836,32 @@ export default function Home() {
                   Select an image on the canvas, then click above.
                 </p>
               </div>
+            </CardContent>
+          </Card>
+
+          <Separator className="my-2" />
+
+          <Card className="mb-2 gap-1 py-2 px-3">
+            <CardHeader className="p-0 pb-1">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                4. Audio
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 pt-0 space-y-2">
+              {audioLoading ? (
+                <p className="text-xs text-muted-foreground">Loading…</p>
+              ) : audioList.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No audio yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {audioList.map((a) => (
+                    <li key={a._id} className="flex flex-col gap-1">
+                      <span className="text-xs font-medium text-foreground truncate" title={a.name}>{a.name}</span>
+                      <audio controls src={a.src} className="w-full max-w-full h-8" preload="metadata" />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </div>

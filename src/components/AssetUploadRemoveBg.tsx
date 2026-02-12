@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { compressToMax3MB } from '@/lib/compress-image';
 
 const allowedExtensions = [".webp", ".jpg", ".jpeg", ".png", ".heic", ".heif"];
 const allowedTypes = ["image/webp", "image/jpeg", "image/png", "image/heic", "image/heif"];
@@ -74,32 +73,60 @@ export default function AssetUploadRemoveBg({ onSuccess }: Props) {
     setErrorMessage("");
 
     try {
-      const { blob, filename } = await compressToMax3MB(resultBlob, "asset.png");
-      const formData = new FormData();
-      formData.append('file', blob, filename);
-      formData.append('name', name.trim());
-
-      const res = await fetch('/api/asset/upload', { method: 'POST', body: formData });
-      const data = await res.json().catch(() => ({}));
-
-      if (res.ok) {
-        setUploadStatus('success');
-        setSelectedFile(null);
-        setName('');
-        setResultBlob(null);
-        if (resultUrl) URL.revokeObjectURL(resultUrl);
-        setResultUrl(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        onSuccess?.();
-        setTimeout(() => setUploadStatus('idle'), 2000);
-      } else {
-        setUploadStatus('error');
-        setErrorMessage(data.error || 'Upload failed');
+      const paramsRes = await fetch('/api/asset/upload-params', { credentials: 'same-origin' });
+      if (!paramsRes.ok) {
+        const err = await paramsRes.json().catch(() => ({}));
+        throw new Error(err.error || 'Could not get upload params');
       }
+      const params = await paramsRes.json() as {
+        cloudName: string;
+        apiKey: string;
+        signature: string;
+        timestamp: number;
+        folder: string;
+        resource_type: string;
+      };
+
+      const formData = new FormData();
+      formData.append('file', resultBlob, 'asset.png');
+      formData.append('api_key', params.apiKey);
+      formData.append('timestamp', String(params.timestamp));
+      formData.append('signature', params.signature);
+      formData.append('folder', params.folder);
+      formData.append('resource_type', params.resource_type);
+
+      const uploadUrl = `https://api.cloudinary.com/v1_1/${params.cloudName}/image/upload`;
+      const uploadRes = await fetch(uploadUrl, { method: 'POST', body: formData });
+      const uploadData = await uploadRes.json().catch(() => ({}));
+      const src = uploadData.secure_url;
+      if (!uploadRes.ok || !src) {
+        throw new Error(uploadData.error?.message || 'Upload to Cloudinary failed');
+      }
+
+      const saveRes = await fetch('/api/asset/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ name: name.trim(), src }),
+      });
+      const saveData = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok) {
+        throw new Error(saveData.error || 'Failed to save asset');
+      }
+
+      setUploadStatus('success');
+      setSelectedFile(null);
+      setName('');
+      setResultBlob(null);
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
+      setResultUrl(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      onSuccess?.();
+      setTimeout(() => setUploadStatus('idle'), 2000);
     } catch (err) {
       console.error("Upload error:", err);
       setUploadStatus('error');
-      setErrorMessage('Upload failed');
+      setErrorMessage(err instanceof Error ? err.message : 'Upload failed');
     }
   };
 
@@ -128,7 +155,7 @@ export default function AssetUploadRemoveBg({ onSuccess }: Props) {
       </label>
 
       <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-slate-600">Asset name</span>
+        <span className="text-xs font-medium text-slate-600">Title (default: file name)</span>
         <input
           type="text"
           value={name}

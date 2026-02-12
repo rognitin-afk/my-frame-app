@@ -3,11 +3,12 @@ import { useEffect, useState } from 'react';
 import TestDb from '../../components/TestDb';
 import AssetUpload from '../../components/AssetUpload';
 import AssetUploadRemoveBg from '../../components/AssetUploadRemoveBg';
+import AudioUpload from '../../components/AudioUpload';
 import { Modal } from '../../components/ui/modal';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-type UploadModal = null | 'frame' | 'asset-direct' | 'asset-removebg';
+type UploadModal = null | 'frame' | 'asset-direct' | 'asset-removebg' | 'audio';
 
 interface Frame {
   _id: string;
@@ -22,7 +23,13 @@ interface Asset {
   src: string;
 }
 
-type AdminTab = 'frames' | 'assets';
+interface AudioItem {
+  _id: string;
+  name: string;
+  src: string;
+}
+
+type AdminTab = 'frames' | 'assets' | 'audio';
 
 type AuthStatus = 'pending' | 'authorized' | 'unauthorized';
 
@@ -32,8 +39,10 @@ export default function AdminPortal() {
   const [tab, setTab] = useState<AdminTab>('frames');
   const [frames, setFrames] = useState<Frame[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [audioList, setAudioList] = useState<AudioItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [assetsLoading, setAssetsLoading] = useState(true);
+  const [audioLoading, setAudioLoading] = useState(true);
   const [downloadCount, setDownloadCount] = useState<number | null>(null);
   const [uploadModal, setUploadModal] = useState<UploadModal>(null);
 
@@ -89,6 +98,19 @@ export default function AdminPortal() {
     }
   };
 
+  const loadAudio = async () => {
+    setAudioLoading(true);
+    try {
+      const res = await fetch('/api/audio');
+      const data = await res.json();
+      setAudioList(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Fetch audio error:", err);
+    } finally {
+      setAudioLoading(false);
+    }
+  };
+
   const loadStats = async () => {
     try {
       const res = await fetch('/api/stats');
@@ -108,6 +130,10 @@ export default function AdminPortal() {
 
   useEffect(() => {
     if (authStatus === 'authorized' && tab === 'assets') loadAssets();
+  }, [authStatus, tab]);
+
+  useEffect(() => {
+    if (authStatus === 'authorized' && tab === 'audio') loadAudio();
   }, [authStatus, tab]);
 
   const handleDeleteFrame = async (id: string) => {
@@ -140,6 +166,24 @@ export default function AdminPortal() {
 
       if (res.ok) {
         setAssets(assets.filter(a => a._id !== id));
+      }
+    } catch (err) {
+      alert("Delete failed");
+    }
+  };
+
+  const handleDeleteAudio = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this audio?")) return;
+
+    try {
+      const res = await fetch('/api/audio', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+
+      if (res.ok) {
+        setAudioList(audioList.filter((a) => a._id !== id));
       }
     } catch (err) {
       alert("Delete failed");
@@ -200,6 +244,15 @@ export default function AdminPortal() {
             }`}
           >
             Assets
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('audio')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-t-md transition-colors ${
+              tab === 'audio' ? 'bg-white border border-b-0 border-primary/30 text-primary' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Audio
           </button>
         </div>
 
@@ -269,6 +322,7 @@ export default function AdminPortal() {
                 Remove BG then upload
               </button>
             </div>
+            <p className="text-xs text-slate-500">Image assets only. For audio, use the Audio tab.</p>
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
               <h2 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-4">Existing Assets ({assets.length})</h2>
               {assetsLoading ? (
@@ -295,6 +349,55 @@ export default function AdminPortal() {
                   {assets.length === 0 && (
                     <div className="col-span-full py-10 text-center border-2 border-dashed rounded-2xl text-slate-400">
                       No assets yet. Upload one above.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab === 'audio' && (
+          <div className="flex flex-col gap-6">
+            <div className="flex justify-start">
+              <button
+                type="button"
+                onClick={() => setUploadModal('audio')}
+                className="px-5 py-2.5 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+              >
+                Upload audio
+              </button>
+            </div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+              <h2 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-4">Existing Audio ({audioList.length})</h2>
+              {audioLoading ? (
+                <div className="py-10 text-center text-slate-400 animate-pulse">Loading...</div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {audioList.map((item) => (
+                    <div
+                      key={item._id}
+                      className="flex flex-col bg-slate-50 hover:bg-white border border-slate-100 hover:border-slate-200 rounded-xl p-4 transition-all"
+                    >
+                      <p className="font-bold text-slate-800 text-sm truncate" title={item.name}>{item.name}</p>
+                      <p className="text-[9px] text-slate-400 font-mono truncate mt-0.5" title={item._id}>{item._id}</p>
+                      <audio
+                        src={item.src}
+                        controls
+                        className="mt-2 w-full h-8"
+                        preload="metadata"
+                      />
+                      <button
+                        onClick={() => handleDeleteAudio(item._id)}
+                        className="mt-2 w-full py-1.5 rounded-lg text-[10px] font-bold bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                  {audioList.length === 0 && (
+                    <div className="col-span-full py-10 text-center border-2 border-dashed rounded-2xl text-slate-400">
+                      No audio yet. Upload one above.
                     </div>
                   )}
                 </div>
@@ -347,6 +450,21 @@ export default function AdminPortal() {
           />
           <p className="mt-3 text-xs text-slate-500">
             Remove background, preview, then upload to Cloudinary and DB.
+          </p>
+        </Modal>
+        <Modal
+          open={uploadModal === 'audio'}
+          onClose={() => setUploadModal(null)}
+          title="Upload audio"
+        >
+          <AudioUpload
+            onSuccess={() => {
+              loadAudio();
+              setUploadModal(null);
+            }}
+          />
+          <p className="mt-3 text-xs text-slate-500">
+            MP3, WAV, OGG, or M4A only. Stored in Cloudinary and saved to DB.
           </p>
         </Modal>
       </div>
