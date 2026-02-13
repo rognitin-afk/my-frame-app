@@ -12,7 +12,7 @@ function getClientIp(request: NextRequest): string {
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
-  // Admin portal: protect /admin-portal-99 only (login is separate at /admin-login)
+  // Admin portal: protect /admin-portal-99 only  (login is separate at /admin-login)
   if (path.startsWith("/admin-portal-99")) {
     try {
       const { verifyAdminCookie, getAdminSessionSecret } = await import("@/lib/auth-admin");
