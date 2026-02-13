@@ -5,7 +5,7 @@ import { theme } from "@/lib/theme";
 
 /**
  * Injects theme from src/lib/theme.ts into CSS variables.
- * Edit theme.ts to change colors; green is used minimally (primary + ring only).
+ * Janmat Canvas theme (primary + ring).
  */
 export function ThemeInjector() {
   useEffect(() => {

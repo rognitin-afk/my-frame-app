@@ -4,8 +4,8 @@ import { ThemeInjector } from "@/components/ThemeInjector";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Congress Canvas-CC",
-  description: "Nepali Congress poster editor with Nepali support",
+  title: "Janmat Canvas",
+  description: "Janmat poster editor with Nepali support",
   icons: { icon: "/favicon.png" },
 };
 

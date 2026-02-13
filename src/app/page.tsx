@@ -68,7 +68,7 @@ export default function Home() {
   const [dbAssets, setDbAssets] = useState<Asset[]>([]);
   const [userName, setUserName] = useState("");
   const [userPosition, setUserPosition] = useState("");
-  const [nameTextColor, setNameTextColor] = useState("#006400");
+  const [nameTextColor, setNameTextColor] = useState("#C41E5A");
   const [positionTextColor, setPositionTextColor] = useState("#444444");
   const [isRemoving, setIsRemoving] = useState(false);
   const userPhotoRef = useRef<fabric.FabricImage | null>(null);
@@ -481,7 +481,7 @@ export default function Home() {
       top: 395,
       fontSize: 28,
       fontFamily: "Arial",
-      fill: "#006400",
+      fill: "#C41E5A",
       originX: "center",
       fontWeight: "bold",
       data: { id: "name-text" },
@@ -996,12 +996,13 @@ export default function Home() {
       >
         <div className="shrink-0 border-b bg-card px-3 py-2 flex items-center gap-2">
           <img
-            src="/favicon.png"
-            alt=""
-            className="size-8 shrink-0 object-contain"
+            src="/logo.png"
+            alt="Janmat Canvas"
+            className="h-8 w-auto max-w-[120px] shrink-0 object-contain object-left"
+            onError={(e) => { const t = e.target as HTMLImageElement; t.onerror = null; t.src = "/favicon.png"; }}
           />
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Congress Canvas(CC)
+            Janmat Canvas
           </h1>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
