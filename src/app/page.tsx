@@ -1002,7 +1002,7 @@ export default function Home() {
             onError={(e) => { const t = e.target as HTMLImageElement; t.onerror = null; t.src = "/favicon.png"; }}
           />
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Janmat Canvas
+            Janmat Canvas-JC
           </h1>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
