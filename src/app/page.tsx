@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "../components/ui/card";
 import { Separator } from "../components/ui/separator";
+import { Modal } from "../components/ui/modal";
 import {
   Upload,
   Sparkles,
@@ -33,6 +34,16 @@ interface Frame {
   name: string;
   src: string;
   category?: string;
+  districts?: string[];
+}
+
+interface District {
+  _id: string;
+  name: string;
+  province: string;
+  headquarters: string;
+  area: number;
+  population: number;
 }
 
 interface Asset {
@@ -66,6 +77,14 @@ export default function Home() {
   const [selectedFrame, setSelectedFrame] = useState<string | null>(null);
   const [dbFrames, setDbFrames] = useState<Frame[]>([]);
   const [dbAssets, setDbAssets] = useState<Asset[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [selectedDistricts, setSelectedDistricts] = useState<string[]>([]);
+  const [selectedProvinces, setSelectedProvinces] = useState<string[]>([]);
+  const [districtSearch, setDistrictSearch] = useState("");
+  const [expandedProvinces, setExpandedProvinces] = useState<Set<string>>(
+    new Set(),
+  );
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [userName, setUserName] = useState("");
   const [userPosition, setUserPosition] = useState("");
   const [nameTextColor, setNameTextColor] = useState("#006400");
@@ -146,6 +165,19 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    async function loadDistricts() {
+      try {
+        const res = await fetch("/api/districts");
+        const data = await res.json();
+        setDistricts(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error("Failed to fetch districts:", error);
+      }
+    }
+    loadDistricts();
+  }, []);
+
+  useEffect(() => {
     async function loadAssets() {
       try {
         const res = await fetch("/api/asset");
@@ -217,7 +249,36 @@ export default function Home() {
   };
 
   // --- SIDEBAR LOGIC ---
-  const framesList = Array.isArray(dbFrames) ? dbFrames : [];
+  // Filter frames based on selected districts/provinces
+  const framesList = React.useMemo(() => {
+    const frames = Array.isArray(dbFrames) ? dbFrames : [];
+
+    // If no filters selected, show all frames
+    if (selectedDistricts.length === 0 && selectedProvinces.length === 0) {
+      return frames;
+    }
+
+    // Get district IDs for selected provinces
+    const provinceDistrictIds = districts
+      .filter((d) => selectedProvinces.includes(d.province))
+      .map((d) => d._id);
+
+    // Combine selected districts and province districts
+    const allSelectedDistrictIds = [
+      ...selectedDistricts,
+      ...provinceDistrictIds,
+    ];
+
+    // Filter frames that have at least one matching district
+    return frames.filter((frame) => {
+      if (!frame.districts || frame.districts.length === 0) {
+        return false; // Hide frames without districts when filtering
+      }
+      return frame.districts.some((districtId) =>
+        allSelectedDistrictIds.includes(districtId),
+      );
+    });
+  }, [dbFrames, selectedDistricts, selectedProvinces, districts]);
 
   const handleSelectFrame = (frameSrc: string) => {
     if (frameSrc === selectedFrame) return;
@@ -1236,6 +1297,7 @@ export default function Home() {
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:bg-muted hover:text-foreground"
                   }`}
+                  suppressHydrationWarning
                 >
                   <LayoutTemplate className="size-5 shrink-0" />
                   <span className="text-[10px] font-medium truncate w-full text-center">
@@ -1251,6 +1313,7 @@ export default function Home() {
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:bg-muted hover:text-foreground"
                   }`}
+                  suppressHydrationWarning
                 >
                   <ImageIcon className="size-5 shrink-0" />
                   <span className="text-[10px] font-medium truncate w-full text-center">
@@ -1266,6 +1329,7 @@ export default function Home() {
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:bg-muted hover:text-foreground"
                   }`}
+                  suppressHydrationWarning
                 >
                   <Images className="size-5 shrink-0" />
                   <span className="text-[10px] font-medium truncate w-full text-center">
@@ -1281,6 +1345,7 @@ export default function Home() {
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:bg-muted hover:text-foreground"
                   }`}
+                  suppressHydrationWarning
                 >
                   <Layers className="size-5 shrink-0" />
                   <span className="text-[10px] font-medium truncate w-full text-center">
@@ -1323,7 +1388,55 @@ export default function Home() {
             </div>
             <div className="flex-1 min-h-0 flex flex-col overflow-y-auto p-2 pt-0">
               {rightPanelTab === "templates" && (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2" suppressHydrationWarning>
+                  {/* Filter Button */}
+                  {districts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setFilterModalOpen(true)}
+                      className="border border-border rounded p-2 bg-card shrink-0 hover:bg-muted transition-colors text-left cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="text-xs font-medium text-foreground">
+                            {selectedProvinces.length === 0 &&
+                            selectedDistricts.length === 0
+                              ? "All locations"
+                              : (() => {
+                                  const parts = [];
+                                  if (selectedProvinces.length > 0)
+                                    parts.push(
+                                      `${selectedProvinces.length} province${selectedProvinces.length > 1 ? "s" : ""}`,
+                                    );
+                                  if (selectedDistricts.length > 0)
+                                    parts.push(
+                                      `${selectedDistricts.length} district${selectedDistricts.length > 1 ? "s" : ""}`,
+                                    );
+                                  return parts.join(", ");
+                                })()}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            Click to filter frames
+                          </div>
+                        </div>
+                        <svg
+                          className="w-4 h-4 text-muted-foreground shrink-0 ml-2"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                          />
+                        </svg>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Frames List */}
                   {framesList.map((frame) => (
                     <button
                       key={frame._id}
@@ -1588,6 +1701,239 @@ export default function Home() {
           </div>
         )}
       </aside>
+
+      {/* District/Province Filter Modal */}
+      <Modal
+        open={filterModalOpen}
+        onClose={() => setFilterModalOpen(false)}
+        title="Filter frames by location"
+      >
+        <div className="space-y-3">
+          {/* Search */}
+          <div>
+            <input
+              type="text"
+              placeholder="Search district or province..."
+              value={districtSearch}
+              onChange={(e) => setDistrictSearch(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          {/* Clear all button */}
+          {(selectedProvinces.length > 0 || selectedDistricts.length > 0) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedProvinces([]);
+                setSelectedDistricts([]);
+              }}
+              className="text-xs text-muted-foreground hover:text-foreground underline"
+            >
+              Clear all filters
+            </button>
+          )}
+
+          {/* Provinces and Districts */}
+          <div className="max-h-[50vh] overflow-y-auto text-sm space-y-2 border border-border rounded-lg p-3">
+            {Array.from(new Set(districts.map((d) => d.province)))
+              .sort()
+              .filter((p) =>
+                districtSearch
+                  ? p.toLowerCase().includes(districtSearch.toLowerCase()) ||
+                    districts.some(
+                      (d) =>
+                        d.province === p &&
+                        d.name
+                          .toLowerCase()
+                          .includes(districtSearch.toLowerCase()),
+                    )
+                  : true,
+              )
+              .map((province) => {
+                const provinceDistricts = districts.filter(
+                  (d) => d.province === province,
+                );
+                const matchingDistricts = districtSearch
+                  ? provinceDistricts.filter((d) =>
+                      d.name
+                        .toLowerCase()
+                        .includes(districtSearch.toLowerCase()),
+                    )
+                  : provinceDistricts;
+
+                return (
+                  <div key={province} className="space-y-1">
+                    {/* Province checkbox with expand/collapse */}
+                    <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedProvinces((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(province)) {
+                              next.delete(province);
+                            } else {
+                              next.add(province);
+                            }
+                            return next;
+                          });
+                        }}
+                        className="p-1 hover:bg-muted-foreground/10 rounded"
+                      >
+                        <svg
+                          className={`w-4 h-4 text-muted-foreground transition-transform ${
+                            expandedProvinces.has(province) ? "rotate-90" : ""
+                          }`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 5l7 7-7 7"
+                          />
+                        </svg>
+                      </button>
+                      <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedProvinces.includes(province)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              // Add province
+                              setSelectedProvinces([
+                                ...selectedProvinces,
+                                province,
+                              ]);
+                              // Add all districts in this province
+                              const districtIds = provinceDistricts.map(
+                                (d) => d._id,
+                              );
+                              setSelectedDistricts((prev) => {
+                                const newSet = new Set([
+                                  ...prev,
+                                  ...districtIds,
+                                ]);
+                                return Array.from(newSet);
+                              });
+                            } else {
+                              // Remove province
+                              setSelectedProvinces(
+                                selectedProvinces.filter((p) => p !== province),
+                              );
+                              // Remove all districts in this province
+                              const districtIds = provinceDistricts.map(
+                                (d) => d._id,
+                              );
+                              setSelectedDistricts((prev) =>
+                                prev.filter((id) => !districtIds.includes(id)),
+                              );
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="font-semibold">{province}</span>
+                        <span className="text-muted-foreground text-sm">
+                          ({provinceDistricts.length})
+                        </span>
+                      </label>
+                    </div>
+
+                    {/* Districts under province - only show when expanded */}
+                    {expandedProvinces.has(province) && (
+                      <div className="pl-8 space-y-1">
+                        {matchingDistricts.map((district) => (
+                          <label
+                            key={district._id}
+                            className="flex items-center gap-2 p-1.5 rounded hover:bg-muted cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedDistricts.includes(district._id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  // Add district
+                                  const newDistricts = [
+                                    ...selectedDistricts,
+                                    district._id,
+                                  ];
+                                  setSelectedDistricts(newDistricts);
+
+                                  // Check if all districts in this province are now selected
+                                  const allDistrictIds = provinceDistricts.map(
+                                    (d) => d._id,
+                                  );
+                                  const allSelected = allDistrictIds.every(
+                                    (id) => newDistricts.includes(id),
+                                  );
+
+                                  // If all districts selected, add province
+                                  if (
+                                    allSelected &&
+                                    !selectedProvinces.includes(province)
+                                  ) {
+                                    setSelectedProvinces([
+                                      ...selectedProvinces,
+                                      province,
+                                    ]);
+                                  }
+                                } else {
+                                  // Remove district
+                                  setSelectedDistricts(
+                                    selectedDistricts.filter(
+                                      (d) => d !== district._id,
+                                    ),
+                                  );
+
+                                  // Remove province if it was selected
+                                  if (selectedProvinces.includes(province)) {
+                                    setSelectedProvinces(
+                                      selectedProvinces.filter(
+                                        (p) => p !== province,
+                                      ),
+                                    );
+                                  }
+                                }
+                              }}
+                              className="w-4 h-4"
+                            />
+                            <span className="text-muted-foreground">
+                              {district.name}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+
+          {/* Selected summary */}
+          {(selectedDistricts.length > 0 || selectedProvinces.length > 0) && (
+            <div className="text-sm text-muted-foreground p-3 border border-border rounded-lg bg-muted/30">
+              <div className="font-medium text-foreground mb-1">
+                Active filters:
+              </div>
+              {selectedProvinces.length > 0 && (
+                <div>
+                  {selectedProvinces.length} province
+                  {selectedProvinces.length > 1 ? "s" : ""}
+                </div>
+              )}
+              {selectedDistricts.length > 0 && (
+                <div>
+                  {selectedDistricts.length} district
+                  {selectedDistricts.length > 1 ? "s" : ""}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Modal>
     </main>
   );
 }

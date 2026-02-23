@@ -25,6 +25,12 @@ export async function POST(request: Request) {
     const body = await request.json();
     const name = typeof body?.name === "string" ? body.name.trim() : "";
     const src = typeof body?.src === "string" ? body.src.trim() : "";
+    const districts = Array.isArray(body?.districts)
+      ? body.districts.filter(
+          (districtId: any) =>
+            typeof districtId === "string" && districtId.length === 24,
+        )
+      : [];
     if (!name || !src) {
       return NextResponse.json(
         { error: "name and src are required" },
@@ -35,6 +41,7 @@ export async function POST(request: Request) {
       name,
       src,
       category: body?.category || "General",
+      districts,
     });
     return NextResponse.json(newFrame, { status: 201 });
   } catch (error) {
