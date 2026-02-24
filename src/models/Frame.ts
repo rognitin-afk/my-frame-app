@@ -6,6 +6,7 @@ const FrameSchema = new Schema({
   src: { type: String, required: true }, // This will be the image path
   category: { type: String, default: 'General' },
   downloadCount: { type: Number, default: 0 },
+  districts: [{ type: Schema.Types.ObjectId, ref: 'District' }], // Array of district references
 }, { 
   timestamps: true // This automatically adds 'createdAt' and 'updatedAt'
 });
